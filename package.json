@@ -1,6 +1,6 @@
 {
   "name": "@ysyyhhh/dsh-pet",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A DSH desktop pet compatible with Codex pet packages, with built-in Petdex import.",
   "type": "module",
   "license": "MIT",
@@ -42,6 +42,7 @@
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
     "build": "tsdown",
+    "verify:client-registration": "node scripts/verify-client-registration.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",
     "test": "vitest run",

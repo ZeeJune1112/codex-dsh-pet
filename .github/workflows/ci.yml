@@ -22,4 +22,5 @@ jobs:
       - run: npm run typecheck:client
       - run: npm test
       - run: npm run build
+      - run: npm run verify:client-registration
       - run: npm pack --dry-run

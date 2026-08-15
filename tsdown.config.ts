@@ -24,7 +24,9 @@ const CLIENT_EXTERNALS = [
   '@deepseek-ai/dsh-client-runtime/client',
 ] as const
 
-const CLIENT_ID = 'dsh-pet'
+// DSH resolves the client module by the exact package name. Scoped packages
+// must register the scope too, otherwise client-modules rejects the bundle.
+const CLIENT_ID = '@ysyyhhh/dsh-pet'
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
