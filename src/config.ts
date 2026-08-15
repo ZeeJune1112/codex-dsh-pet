@@ -3,13 +3,8 @@
  *
  * The entry `Config` schema is a Schemastery object (satisfying the Standard
  * Schema interface Cordis expects) so `cordis.yml` can provide overrides and
- * invalid values fail loudly at load time. The smaller {@link PetSettings}
- * schema is the user-editable subset registered as a settings namespace so the
- * Web configuration page can change it at runtime; the entry config fields
- * (`enabled`, `petScale`, `petId`) are that namespace's composition `base`.
- *
- * Position persistence lives in a private local file (not the harness config
- * service), so the pet works without any optional Harness storage service.
+ * invalid values fail loudly at load time. The entry config seeds the private
+ * per-pet state on first run; later UI changes are persisted independently.
  */
 
 import z from '@deepseek-ai/schemastery'
@@ -21,38 +16,6 @@ export interface PetCatalogEntry {
   /** Human label shown in the settings picker. */
   displayName: string
 }
-
-/** Settings namespace name (spelled identically in the client package). */
-export const DESKTOP_PET_SETTINGS_NS = 'dsh-pet'
-
-/** User-editable settings section exposed on the Web configuration page. */
-export interface PetSettings {
-  /** Show or hide the pet. */
-  enabled: boolean
-  /** Integer scale multiplier applied to the 192×208 atlas cells. */
-  petScale: number
-  /** Which pet to display (a directory name under `assets/pets/`). */
-  petId: string
-  /** Hide the pet while no task is running; show it again on activity. */
-  hideWhenIdle: boolean
-  /**
-   * The pets discovered under `assets/pets/` at startup. Read-only from the
-   * client's perspective: the host always replaces it with its own scan, so a
-   * user-layer value cannot shadow the directory facts.
-   */
-  availablePets: PetCatalogEntry[]
-}
-
-export const PetSettingsSchema: z<PetSettings> = z.object({
-  enabled: z.boolean().default(true),
-  petScale: z.number().step(0.25).min(0.5).max(4).default(1),
-  petId: z.string().default('text'),
-  hideWhenIdle: z.boolean().default(false),
-  availablePets: z.array(z.object({
-    id: z.string(),
-    displayName: z.string(),
-  })).default([]),
-})
 
 export interface PetConfig {
   /** Composition-level master switch; when false the plugin loads but shows nothing. */

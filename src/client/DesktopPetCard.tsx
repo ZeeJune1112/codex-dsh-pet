@@ -1,279 +1,151 @@
-/**
- * The desktop pet card: a header naming the plugin and what its settings
- * govern, disclosing controls in place, with the save that writes them.
- *
- * This replicates the plugin-configuration card chrome (see
- * ui-settings-plugins' PluginCard) so the pet card reads identically to the
- * Shell and Agent-loop cards: name-over-description header with a chevron, a
- * footer with Discard/Save, and one labelled field row per control. Staged
- * edits outlive collapsing, and the header marks a card holding unsaved edits.
- */
-
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DesktopPetCardFace } from './desktop-pet-controller'
-import { PET_SCALE_MAX, PET_SCALE_MIN, PET_SCALE_STEP, quantizeScale } from './desktop-pet-controller'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './DesktopPetCard.module.css'
 
-/** Props the renderer binds for the desktop pet card. */
-export type DesktopPetCardProps =
-  PropsRuntime<'settings.plugin.item'>
-  & PropsLocale<'settings.desktopPet'>
-  & InjectFace<DesktopPetCardFace>
+interface PetItem {
+  id: string
+  displayName: string
+  visible: boolean
+  scale: number
+  hideWhenIdle: boolean
+  position: { x: number; y: number }
+}
+interface PetSnapshot { selectedPetId: string; order: string[]; pets: PetItem[] }
+export type DesktopPetCardProps = PropsRuntime<'settings.plugin.item'> & PropsLocale<'settings.desktopPet'>
 
-/** GitHub repository path to the "adding a pet" guide. */
-const ADD_PET_DOC_URL = 'https://github.com/ysyyhhh/dsh-pet/blob/master/docs/adding-a-pet.md'
+async function api(path: string, body?: unknown): Promise<PetSnapshot> {
+  const response = await fetch(`/dsh-pet/${path}`, body === undefined ? { cache: 'no-store' } : {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const value = await response.json() as PetSnapshot & { error?: string }
+  if (!response.ok) throw new Error(value.error || `Request failed (${response.status})`)
+  return value
+}
 
-/**
- * Render the desktop pet card.
- * @param props - locale copy, the card snapshot, and its form actions.
- * @returns the card, or nothing when the namespace is unavailable.
- */
+async function uploadCodex(file: File): Promise<PetSnapshot> {
+  const response = await fetch(`/dsh-pet/import-codex?filename=${encodeURIComponent(file.name)}`, {
+    method: 'POST', headers: { 'content-type': 'application/zip' }, body: await file.arrayBuffer(),
+  })
+  const value = await response.json() as PetSnapshot & { error?: string }
+  if (!response.ok) throw new Error(value.error || `Upload failed (${response.status})`)
+  return value
+}
+
 export function DesktopPetCard(props: DesktopPetCardProps) {
   const { t } = props
-  const state = props.useDesktopPet(s => s)
   const [open, setOpen] = useState(false)
+  const [snapshot, setSnapshot] = useState<PetSnapshot | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState('')
+  const [slug, setSlug] = useState('')
+  const [dragId, setDragId] = useState<string | null>(null)
 
-  if (!state.available) return null
-  const title = t('desktopPet.title')
-  const blocked = !state.dirty || state.invalid || state.saving
+  const load = async () => {
+    try { setSnapshot(await api('state')); setError('') } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+  }
+  useEffect(() => { if (open && snapshot === null) void load() }, [open])
+  const selected = useMemo(() => snapshot?.pets.find(p => p.id === snapshot.selectedPetId) ?? snapshot?.pets[0], [snapshot])
+
+  const mutate = async (key: string, path: string, body: unknown) => {
+    if (busy) return
+    setBusy(key); setError('')
+    try { setSnapshot(await api(path, body)) } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy('') }
+  }
+  const select = (id: string) => { void mutate(`select:${id}`, 'select', { id }) }
+  const update = (id: string, patch: Partial<PetItem>) => { void mutate(`update:${id}`, 'update', { id, patch }) }
+  const reorder = (targetId: string) => {
+    if (!snapshot || !dragId || dragId === targetId) return
+    const order = snapshot.order.filter(id => id !== dragId)
+    order.splice(order.indexOf(targetId), 0, dragId)
+    setDragId(null)
+    void mutate('reorder', 'reorder', { order })
+  }
+  const importPet = () => {
+    const normalized = slug.trim().toLowerCase()
+    if (!normalized) return
+    void mutate('import', 'import-petdex', { slug: normalized }).then(() => setSlug(''))
+  }
+  const importFile = async (file: File | undefined) => {
+    if (!file || busy) return
+    setBusy('zip'); setError('')
+    try { setSnapshot(await uploadCodex(file)) } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy('') }
+  }
 
   return (
     <li className={clsx(css.card, open && css.cardOpen)}>
-      <button
-        type="button"
-        className={css.header}
-        aria-expanded={open}
-        aria-label={`${t(open ? 'collapse' : 'expand')}: ${title}`}
-        onClick={() => { setOpen(!open) }}
-      >
-        <span className={css.headText}>
-          <span className={css.name}>{title}</span>
-          <span className={css.description}>{t('desktopPet.description')}</span>
-        </span>
-        {state.dirty ? <span className={css.pending}>{t('unsaved')}</span> : null}
+      <button type="button" className={css.header} aria-expanded={open} onClick={() => setOpen(value => !value)}>
+        <span className={css.headText}><span className={css.name}>{t('desktopPet.title')}</span><span className={css.description}>{t('desktopPet.description')}</span></span>
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
-      {open
-        ? (
-          <div className={css.body}>
-            {!state.writable ? <p className={css.readOnly} role="status">{t('readOnly')}</p> : null}
-
-            <ToggleField
-              id="plugin-config-desktop-pet-enabled"
-              label={t('desktopPet.enabled')}
-              hint={t('desktopPet.enabledHint')}
-              overriddenLabel={t('overridden')}
-              resetLabel={t('reset')}
-              disabled={!state.writable}
-              checked={state.enabled.value}
-              overridden={state.enabled.overridden}
-              onChange={(value) => { props.edit('enabled', value) }}
-              onReset={() => { props.resetField('enabled') }}
-            />
-
-            <ToggleField
-              id="plugin-config-desktop-pet-hide-when-idle"
-              label={t('desktopPet.hideWhenIdle')}
-              hint={t('desktopPet.hideWhenIdleHint')}
-              overriddenLabel={t('overridden')}
-              resetLabel={t('reset')}
-              disabled={!state.writable}
-              checked={state.hideWhenIdle.value}
-              overridden={state.hideWhenIdle.overridden}
-              onChange={(value) => { props.edit('hideWhenIdle', value) }}
-              onReset={() => { props.resetField('hideWhenIdle') }}
-            />
-
-            <ScaleField
-              id="plugin-config-desktop-pet-scale"
-              label={t('desktopPet.scale')}
-              hint={t('desktopPet.scaleHint')}
-              overriddenLabel={t('overridden')}
-              resetLabel={t('reset')}
-              disabled={!state.writable}
-              value={state.petScale.value}
-              overridden={state.petScale.overridden}
-              onChange={(value) => { props.edit('petScale', value) }}
-              onReset={() => { props.resetField('petScale') }}
-            />
-
-            <PetField
-              id="plugin-config-desktop-pet-id"
-              label={t('desktopPet.pet')}
-              hint={t('desktopPet.petHint')}
-              overriddenLabel={t('overridden')}
-              resetLabel={t('reset')}
-              disabled={!state.writable}
-              value={state.petId.value}
-              overridden={state.petId.overridden}
-              pets={state.availablePets}
-              onChange={(value) => { props.edit('petId', value) }}
-              onReset={() => { props.resetField('petId') }}
-            />
-
-            <p className={css.docLink}>
-              <a href={ADD_PET_DOC_URL} target="_blank" rel="noreferrer">{t('desktopPet.addPetLink')}</a>
-            </p>
-
-            <div className={css.footer}>
-              {state.failed ? <p className={css.failed} role="status">{t('saveFailed')}</p> : null}
-              <button
-                type="button"
-                className={css.discard}
-                disabled={!state.dirty || state.saving}
-                onClick={props.discard}
-              >
-                {t('discard')}
-              </button>
-              <button
-                type="button"
-                className={css.save}
-                disabled={blocked}
-                onClick={props.save}
-              >
-                {t(state.saving ? 'saving' : 'save')}
-              </button>
-            </div>
-          </div>
-        )
-        : null}
+      {open ? (
+        <div className={css.body}>
+          {snapshot === null && !error ? <LoadingState label={t('loading')} /> : null}
+          {error ? <div className={css.error} role="alert"><span>{error}</span><button type="button" onClick={() => void load()}>{t('retry')}</button></div> : null}
+          {snapshot && selected ? (
+            <>
+              <section className={css.stage} aria-label={t('currentPet')}>
+                <div className={css.previewWrap}><img className={css.preview} src={`/dsh-pet/preview?id=${encodeURIComponent(selected.id)}`} alt={selected.displayName} /></div>
+                <div className={css.currentInfo}>
+                  <span className={css.currentLabel}>{t('currentPet')}</span>
+                  <strong>{selected.displayName}</strong>
+                  <span className={css.currentMeta}>{selected.visible ? t('showing') : t('hidden')} · {selected.scale.toFixed(2)}×</span>
+                  <button type="button" className={clsx(css.primary, selected.visible && css.secondary)} disabled={Boolean(busy)} onClick={() => update(selected.id, { visible: !selected.visible })}>
+                    {selected.visible ? t('hidePet') : t('showPet')}
+                  </button>
+                </div>
+              </section>
+              <section className={css.library}>
+                <div className={css.sectionHead}><strong>{t('petLibrary')}</strong><span>{t('dragHint')}</span></div>
+                <div className={css.petRail}>
+                  {snapshot.pets.map(pet => (
+                    <button type="button" key={pet.id} draggable className={clsx(css.petTile, pet.id === selected.id && css.petTileActive)} aria-pressed={pet.id === selected.id}
+                      onClick={() => select(pet.id)} onDragStart={() => setDragId(pet.id)} onDragOver={event => event.preventDefault()} onDrop={() => reorder(pet.id)}>
+                      <img src={`/dsh-pet/preview?id=${encodeURIComponent(pet.id)}`} alt="" />
+                      <span>{pet.displayName}</span><small>{pet.visible ? t('showing') : t('hidden')}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section className={css.controls}>
+                <label className={css.controlLabel} htmlFor="dsh-pet-scale">{t('size')}</label>
+                <div className={css.rangeRow}>
+                  <input id="dsh-pet-scale" type="range" min="0.5" max="4" step="0.25" value={selected.scale} disabled={Boolean(busy)}
+                    onChange={event => setSnapshot(localPatch(snapshot, selected.id, { scale: Number(event.target.value) }))}
+                    onPointerUp={event => update(selected.id, { scale: Number((event.target as HTMLInputElement).value) })}
+                    onKeyUp={event => update(selected.id, { scale: Number((event.target as HTMLInputElement).value) })} />
+                  <output>{selected.scale.toFixed(2)}×</output>
+                </div>
+                <label className={css.toggleRow}>
+                  <span><strong>{t('hideWhenIdle')}</strong><small>{t('hideWhenIdleHint')}</small></span>
+                  <input type="checkbox" checked={selected.hideWhenIdle} disabled={Boolean(busy)} onChange={event => update(selected.id, { hideWhenIdle: event.target.checked })} />
+                </label>
+              </section>
+              <section className={css.importer}>
+                <div><strong>{t('importTitle')}</strong><span>{t('importHint')}</span></div>
+                <div className={css.importRow}>
+                  <label htmlFor="dsh-pet-slug">{t('petdexSlug')}</label>
+                  <input id="dsh-pet-slug" value={slug} placeholder="usagi" disabled={Boolean(busy)} onChange={event => setSlug(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') importPet() }} />
+                  <button type="button" className={css.primary} disabled={Boolean(busy) || !slug.trim()} onClick={importPet}>{busy === 'import' ? t('importing') : t('import')}</button>
+                </div>
+                <a href="https://petdex.dev/" target="_blank" rel="noreferrer">{t('browsePetdex')}</a>
+                <div className={css.zipRow}>
+                  <span>{t('codexZipHint')}</span>
+                  <label className={css.secondary}>{busy === 'zip' ? t('importing') : t('chooseZip')}<input type="file" accept=".zip,application/zip" disabled={Boolean(busy)} onChange={event => { void importFile(event.target.files?.[0]); event.target.value = '' }} /></label>
+                </div>
+              </section>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   )
 }
 
-interface FieldChromeProps {
-  id: string
-  label: string
-  hint: string
-  overriddenLabel: string
-  resetLabel: string
-  disabled: boolean
-  overridden: boolean
-  onReset: () => void
-  children: React.ReactNode
+function localPatch(snapshot: PetSnapshot, id: string, patch: Partial<PetItem>): PetSnapshot {
+  return { ...snapshot, pets: snapshot.pets.map(pet => pet.id === id ? { ...pet, ...patch } : pet) }
 }
-
-/** Shared field chrome: label + override/reset badges, control, hint. */
-function FieldChrome(props: FieldChromeProps) {
-  return (
-    <div className={css.field}>
-      <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
-        {props.overridden
-          ? (
-            <span className={css.badges}>
-              <span className={css.badge}>{props.overriddenLabel}</span>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
-          )
-          : null}
-      </div>
-      {props.children}
-      <p className={css.hint}>{props.hint}</p>
-    </div>
-  )
-}
-
-/** The show/hide toggle. */
-function ToggleField(props: {
-  id: string
-  label: string
-  hint: string
-  overriddenLabel: string
-  resetLabel: string
-  disabled: boolean
-  checked: boolean
-  overridden: boolean
-  onChange: (value: boolean) => void
-  onReset: () => void
-}) {
-  return (
-    <FieldChrome {...props}>
-      <label className={css.switchRow}>
-        <input
-          id={props.id}
-          type="checkbox"
-          checked={props.checked}
-          disabled={props.disabled}
-          onChange={(event) => { props.onChange(event.target.checked) }}
-        />
-        <span className={css.switchTrack} aria-hidden="true">
-          <span className={clsx(css.switchThumb, props.checked && css.switchThumbOn)} />
-        </span>
-      </label>
-    </FieldChrome>
-  )
-}
-
-/** The fractional size slider. */
-function ScaleField(props: {
-  id: string
-  label: string
-  hint: string
-  overriddenLabel: string
-  resetLabel: string
-  disabled: boolean
-  value: number
-  overridden: boolean
-  onChange: (value: number) => void
-  onReset: () => void
-}) {
-  return (
-    <FieldChrome {...props}>
-      <div className={css.sliderRow}>
-        <input
-          id={props.id}
-          type="range"
-          min={PET_SCALE_MIN}
-          max={PET_SCALE_MAX}
-          step={PET_SCALE_STEP}
-          value={props.value}
-          disabled={props.disabled}
-          onChange={(event) => { props.onChange(quantizeScale(Number(event.target.value))) }}
-        />
-        <span className={css.value}>{props.value.toFixed(2)}×</span>
-      </div>
-    </FieldChrome>
-  )
-}
-
-/** The pet picker dropdown. */
-function PetField(props: {
-  id: string
-  label: string
-  hint: string
-  overriddenLabel: string
-  resetLabel: string
-  disabled: boolean
-  value: string
-  overridden: boolean
-  pets: ReadonlyArray<{ id: string; displayName: string }>
-  onChange: (value: string) => void
-  onReset: () => void
-}) {
-  return (
-    <FieldChrome {...props}>
-      <select
-        id={props.id}
-        className={css.select}
-        value={props.value}
-        disabled={props.disabled}
-        onChange={(event) => { props.onChange(event.target.value) }}
-      >
-        {props.pets.map(pet => (
-          <option key={pet.id} value={pet.id}>{pet.displayName}</option>
-        ))}
-      </select>
-    </FieldChrome>
-  )
+function LoadingState({ label }: { label: string }) {
+  return <div className={css.loading} role="status"><div /><div /><span>{label}</span></div>
 }

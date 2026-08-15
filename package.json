@@ -1,6 +1,6 @@
 {
   "name": "@ysyyhhh/dsh-pet",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A DSH desktop pet compatible with Codex pet packages, with built-in Petdex import.",
   "type": "module",
   "license": "MIT",
@@ -51,6 +51,7 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
     "clsx": "^2.0.0",
+    "fflate": "^0.8.3",
     "koffi": "^3.1.0",
     "sharp": "^0.35.3"
   },

@@ -32,7 +32,7 @@ describe('/pet command', () => {
 
   it('lists installed pets', async () => {
     const { run } = setup()
-    expect((await run('list')).text).toContain('boba — Boba')
+    expect((await run('list')).text).toContain('boba - Boba')
   })
 
   it('selects an installed pet', async () => {

@@ -1,41 +1,21 @@
-/**
- * deepseek-harness desktop-pet plugin entry point.
- *
- * The `apply` function is the only surface Cordis calls. Everything here is
- * assembled through the compatibility boundary: the bridge (harness events)
- * feeds the state machine, which drives the renderer, which owns a native
- * overlay window. Any failure in the window/renderer path is contained so it
- * never propagates into harness execution.
- *
- * When the optional settings service exists, a `desktop-pet` namespace is
- * registered and the Web configuration page can change `enabled` (show/hide),
- * `petScale` (size), and `petId` (which bundled pet) at runtime.
- */
-
-import { fileURLToPath } from 'node:url'
+/** DSH desktop pet host entry: native overlays, persistent pet library, and Web UI API. */
 import type { Context } from '@deepseek-ai/cordis'
-
-import { registerPetCommand } from './commands'
 import { Config, type PetConfig } from './config'
 import { PetStateMachine } from './core/PetStateMachine'
 import type { NormalizedEvent, SemanticState } from './core/types'
 import { createHarnessBridge, type HarnessBridge, type HarnessContext } from './integration/HarnessBridge'
-import { loadPosition, savePosition } from './persistence'
-import { loadPetAtlas, scanPets } from './pets'
-import { importPetFromPetdex } from './petdex'
-import { installPetSettings, type PetSettingsHandle, type PetSettingsRegistrar, type PetSettingsSnapshot } from './settings'
-import { PetWindow } from './renderer/PetWindow'
+import { registerPetCommand } from './commands'
+import { PetRuntime } from './pet-runtime'
+import { mountPetRoutes } from './routes'
 import { selectBackend } from './renderer/backend/selectBackend'
+import type { WebServerService } from './pet-api'
 
 export const name = 'dsh-pet'
 export const inject: string[] = []
-
 export { Config }
 export type { PetConfig }
 
-/** A disposer may be sync or async; Cordis awaits async disposers on unload. */
 type Disposer = () => void | Promise<void>
-
 interface PetContext extends HarnessContext {
   effect(execute: () => Disposer, label?: string): Disposer
   inject(deps: string[], callback: (ctx: HarnessContext) => void): unknown
@@ -44,244 +24,59 @@ interface PetContext extends HarnessContext {
 export function apply(ctx: Context, config: PetConfig): void {
   const petCtx = ctx as unknown as PetContext
   const log = petCtx.logger('dsh-pet')
-
   if (!config.enabled) {
     log.info('disabled by config; not starting')
     return
   }
 
   petCtx.effect(() => {
-    // Shared teardown state, populated as setup completes.
     let disposed = false
     let bridge: HarnessBridge | undefined
-    let window: PetWindow | undefined
-    let machine: PetStateMachine | undefined
-    let unsubscribe: (() => void) | undefined
-    let unregisterCommand: (() => void) | undefined
-    let debugState: SemanticState | undefined
-    let settingsHandle: PetSettingsHandle | undefined
+    let unregisterRoutes: (() => void) | undefined
+    const backend = selectBackend() ?? null
+    if (!backend) log.warn('no supported native window backend on %s; Web pet library remains available', process.platform)
+    const runtime = new PetRuntime({ config, backend, log })
+    const machine = new PetStateMachine({ onChange: state => runtime.setSemanticState(state) })
 
-    let currentSettings: PetSettingsSnapshot = {
-      enabled: config.enabled,
-      petScale: config.petScale,
-      petId: config.petId,
-      hideWhenIdle: config.hideWhenIdle,
-      availablePets: [],
-    }
-    // The catalog is a scan-time fact, not a user setting: remember it here so
-    // settings callbacks never adopt a stale/overridden `availablePets`.
-    let catalog: PetSettingsSnapshot['availablePets'] = []
-    let loadedPetKey: string | null = null
-    let reconcileSeq = 0
-
-    /** Whether the window should be visible given the current state + settings. */
-    function shouldBeVisible(state: SemanticState | undefined): boolean {
-      if (!currentSettings.enabled) return false
-      // Debug override keeps the pet visible so `/pet <state>` is inspectable.
-      if (debugState !== undefined) return true
-      // Auto-hide only once the machine reaches the definitively-idle sleep
-      // state (a period of no activity), never during transient IDLE between
-      // tool calls inside an active turn.
-      if (currentSettings.hideWhenIdle && state === 'SLEEPING') return false
-      return true
-    }
-
-    function applyVisibility(state: SemanticState | undefined): void {
-      window?.setVisible(shouldBeVisible(state))
-    }
-
-    /**
-     * Resolve the pet id to actually load. A persisted petId may reference a
-     * directory that has since been removed; fall back to the first available
-     * catalog entry instead of failing the whole renderer.
-     */
-    function effectivePetId(petId: string): string {
-      if (catalog.some(entry => entry.id === petId)) return petId
-      return catalog[0]?.id ?? 'text'
-    }
-
-    /** Apply a resolved settings snapshot to the window (idempotent). */
-    async function reconcile(settings: PetSettingsSnapshot): Promise<void> {
-      const seq = ++reconcileSeq
-      const petId = effectivePetId(settings.petId)
-      const petKey = petId
-
-      if (window) {
-        applyVisibility(machine?.state)
-        await window.setScale(settings.petScale)
-        if (petKey !== loadedPetKey) {
-          loadedPetKey = petKey
-          try {
-            const atlas = await loadPetAtlas(petId)
-            if (disposed || seq !== reconcileSeq) return
-            await window.loadPet(atlas)
-          } catch (error) {
-            log.warn('failed to switch pet; keeping current: %s', (error as Error)?.message ?? String(error))
-          }
-        }
-        return
-      }
-
-      // Create the window with the current resolved settings.
-      loadedPetKey = petKey
-      let atlas
-      try {
-        atlas = await loadPetAtlas(petId)
-      } catch (error) {
-        log.warn('failed to load pet assets; renderer disabled: %s', (error as Error)?.message ?? String(error))
-        return
-      }
-      if (disposed || seq !== reconcileSeq) return
-
-      const backend = selectBackend()
-      if (!backend) {
-        log.warn('no supported window backend on %s; renderer disabled', process.platform)
-        return
-      }
-
-      try {
-        window = new PetWindow({
-          backend,
-          atlas,
-          scale: settings.petScale,
-          alwaysOnTop: config.alwaysOnTop,
-          animationEnabled: config.animationEnabled,
-          idleFrequencySec: config.idleFrequencySec,
-          clickThrough: config.clickThrough,
-          position: loadPosition(),
-          onDrag: (x, y) => savePosition({ x, y }),
-          onHover: () => { window?.playJump() },
-          onUnhover: () => { window?.endHover() },
-          onClose: () => {
-            // Persist "closed" through the settings seam when available, else
-            // hide in place. Either path stops the pet until re-enabled.
-            if (settingsHandle) {
-              void settingsHandle.update({ enabled: false })
-            } else {
-              currentSettings.enabled = false
-              applyVisibility(machine?.state)
-            }
-          },
-        })
-        await window.open()
-        if (disposed) {
-          await window.destroy()
-          window = undefined
-          return
-        }
-        const initialState: SemanticState = config.startSleeping ? 'SLEEPING' : 'IDLE'
-        window.setState(initialState)
-        applyVisibility(initialState)
-        log.info('pet window created via %s backend (%s)', backend.name, petKey)
-      } catch (error) {
-        log.warn('failed to create pet window; renderer disabled: %s', (error as Error)?.message ?? String(error))
-        window = undefined
-      }
-    }
-
-    // Debug override plumbing (developer mode, /pet <state>).
-    const debugHost = {
-      setDebugState(state: SemanticState): void {
-        debugState = state
-        window?.setState(state)
-        applyVisibility(state)
-      },
-      resetDebugState(): void {
-        debugState = undefined
-        if (machine) applyVisibility(machine.state)
-      },
-      async importPet(slug: string) {
-        const imported = await importPetFromPetdex(slug)
-        catalog = scanPets()
-        currentSettings = { ...currentSettings, petId: imported.slug, availablePets: catalog }
-        if (settingsHandle) {
-          await settingsHandle.update({ petId: imported.slug, availablePets: catalog })
-        } else {
-          await reconcile(currentSettings)
-        }
-        return { id: imported.slug, displayName: imported.displayName }
-      },
-      listPets() {
-        catalog = scanPets()
-        return catalog
-      },
-      async selectPet(id: string) {
-        catalog = scanPets()
-        if (!catalog.some(pet => pet.id === id)) return false
-        currentSettings = { ...currentSettings, petId: id, availablePets: catalog }
-        if (settingsHandle) {
-          await settingsHandle.update({ petId: id, availablePets: catalog })
-        } else {
-          await reconcile(currentSettings)
-        }
-        return true
-      },
-    }
-
-    // Sync: start the bridge (subscriptions are installed synchronously).
     bridge = createHarnessBridge(petCtx)
-    void bridge.start().catch((error) => {
-      log.warn('bridge start failed: %s', (error as Error)?.message ?? String(error))
+    void bridge.start().catch(error => log.warn('bridge start failed: %s', (error as Error)?.message ?? String(error)))
+    const unsubscribe = bridge.subscribe((event: NormalizedEvent) => {
+      if (!disposed) machine.onEvent(event)
     })
 
-    // Sync: build the state machine and wire events → window.
-    machine = new PetStateMachine({
-      onChange: (state) => {
-        if (disposed) return
-        if (debugState === undefined) {
-          window?.setState(state)
-        }
-        // Auto-hide reacts to the machine's SLEEPING transitions.
-        applyVisibility(state)
+    const debugHost = {
+      setDebugState(state: SemanticState) { runtime.setSemanticState(state) },
+      resetDebugState() { runtime.setSemanticState(machine.state) },
+      async importPet(slug: string) {
+        const snapshot = await runtime.importPetdex(slug)
+        const pet = snapshot.pets.find(item => item.id === snapshot.selectedPetId)!
+        return { id: pet.id, displayName: pet.displayName }
       },
-    })
-    unsubscribe = bridge.subscribe((event: NormalizedEvent) => {
+      listPets() { return runtime.snapshot().pets.map(({ id, displayName }) => ({ id, displayName })) },
+      async selectPet(id: string) {
+        try { await runtime.select(id); return true } catch { return false }
+      },
+    }
+    const unregisterCommand = registerPetCommand({ commands: petCtx.get('commands') } as never, debugHost)
+
+    petCtx.inject(['webServer'], (hostCtx) => {
       if (disposed) return
-      machine?.onEvent(event)
+      const host = hostCtx as unknown as { webServer: WebServerService }
+      unregisterRoutes?.()
+      unregisterRoutes = mountPetRoutes(host, runtime)
+      log.info('Web pet library mounted at /dsh-pet/*')
     })
 
-    // Register the optional /pet debug command.
-    unregisterCommand = registerPetCommand({ commands: petCtx.get('commands') } as never, debugHost)
+    void runtime.start().catch(error => log.warn('dsh-pet startup failed: %s', (error as Error)?.message ?? String(error)))
 
-    // Scan the bundled pet directory synchronously so the catalog is part of
-    // the settings base snapshot registered below.
-    catalog = scanPets()
-    currentSettings.availablePets = catalog
-
-    // Optional settings integration: wait for the settings service, then
-    // register the namespace and react to committed changes.
-    petCtx.inject(['settings'], (sctx) => {
-      const registrar = sctx.get('settings') as PetSettingsRegistrar | undefined
-      settingsHandle = installPetSettings(registrar, currentSettings, (settings) => {
-        if (disposed) return
-        // `availablePets` is always the host's scan result, never whatever
-        // the settings round-trip resolved (a stale user layer must not
-        // shadow the directory facts). Everything else follows settings.
-        currentSettings = { ...settings, availablePets: catalog }
-        void reconcile(currentSettings).catch((error) => {
-          log.warn('settings reconcile failed: %s', (error as Error)?.message ?? String(error))
-        })
-      })
-      void settingsHandle.update({ availablePets: catalog })
-    })
-
-    // Initial window creation (runs even when no settings service exists).
-    void reconcile(currentSettings).catch((error) => {
-      log.warn('dsh-pet startup failed: %s', (error as Error)?.message ?? String(error))
-    })
-
-    // Teardown (async so Cordis awaits window/native cleanup).
     return async () => {
       disposed = true
-      settingsHandle?.dispose()
-      unsubscribe?.()
+      unregisterRoutes?.()
+      unsubscribe()
       unregisterCommand?.()
-      machine?.dispose()
+      machine.dispose()
       await bridge?.stop().catch(() => {})
-      await window?.destroy().catch(() => {})
-      bridge = undefined
-      window = undefined
-      machine = undefined
+      await runtime.dispose()
     }
-  })
+  }, 'dsh-pet runtime')
 }

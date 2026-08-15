@@ -1,54 +1,21 @@
-/** `settings.desktopPet` namespace dictionaries (the desktop pet card's copy). */
-
-/** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'desktopPet.title': 'DSH 桌宠',
-  'desktopPet.description': '兼容 Codex 桌宠格式，可直接从 Petdex 导入。',
-  'desktopPet.enabled': '显示宠物',
-  'desktopPet.enabledHint': '在桌面上显示或隐藏宠物。',
-  'desktopPet.hideWhenIdle': '无任务时自动隐藏',
-  'desktopPet.hideWhenIdleHint': '宠物进入睡眠（无任务）状态时自动隐藏，有任务时重新显示。',
-  'desktopPet.scale': '宠物大小',
-  'desktopPet.scaleHint': '调整宠物的大小（0.5–4 倍，步长 0.25）。',
-  'desktopPet.pet': '宠物',
-  'desktopPet.petHint': '选择要显示的宠物。',
-  'desktopPet.addPetLink': 'Codex 桌宠与 Petdex 导入说明',
-  'overridden': '已覆盖',
-  'reset': '恢复默认',
-  'readOnly': '本部署的设置为只读。',
-  'expand': '展开设置',
-  'collapse': '收起设置',
-  'save': '保存',
-  'saving': '保存中…',
-  'discard': '放弃修改',
-  'unsaved': '未保存',
-  'saveFailed': '本部署没有接受这些值，已保留供你修改。',
+  'desktopPet.description': '管理多只 Codex 桌宠，也可直接从 Petdex 导入。',
+  loading: '正在读取桌宠…', retry: '重试', currentPet: '当前桌宠', showing: '桌面显示中', hidden: '已隐藏',
+  showPet: '显示这只', hidePet: '隐藏这只', petLibrary: '宠物库', dragHint: '拖动卡片可排序', size: '桌宠大小',
+  hideWhenIdle: '无任务时自动隐藏', hideWhenIdleHint: '有新任务时自动重新显示。', importTitle: '导入新桌宠',
+  importHint: '输入 petdex.dev 桌宠页面末尾的名称。导入后立即选中并显示。', petdexSlug: 'Petdex 名称',
+  import: '导入', importing: '导入中…', browsePetdex: '浏览 Petdex 桌宠库',
+  codexZipHint: '也可以导入 Codex 桌宠 ZIP，支持口袋桌宠导出的配置。', chooseZip: '选择 ZIP',
 } satisfies Record<string, string>
-
-/** The settings.desktopPet namespace key union. */
 export type DesktopPetKey = keyof typeof zh
-
-/** English dictionary, checked complete against the zh key set. */
 export const en = {
   'desktopPet.title': 'DSH Pet',
-  'desktopPet.description': 'Codex pet compatible, with built-in Petdex import.',
-  'desktopPet.enabled': 'Show pet',
-  'desktopPet.enabledHint': 'Show or hide the pet on the desktop.',
-  'desktopPet.hideWhenIdle': 'Hide when idle',
-  'desktopPet.hideWhenIdleHint': 'Automatically hide the pet when it sleeps (no task), and show it again on activity.',
-  'desktopPet.scale': 'Pet size',
-  'desktopPet.scaleHint': 'Adjust the pet size (0.5–4×, in 0.25 steps).',
-  'desktopPet.pet': 'Pet',
-  'desktopPet.petHint': 'Choose which pet to display.',
-  'desktopPet.addPetLink': 'Codex pet and Petdex import guide',
-  'overridden': 'Overridden',
-  'reset': 'Reset to default',
-  'readOnly': 'This deployment stores settings read-only.',
-  'expand': 'Show settings',
-  'collapse': 'Hide settings',
-  'save': 'Save',
-  'saving': 'Saving…',
-  'discard': 'Discard',
-  'unsaved': 'Unsaved',
-  'saveFailed': 'The deployment did not accept these values; they were left for you to correct.',
+  'desktopPet.description': 'Manage multiple Codex pets and import directly from Petdex.',
+  loading: 'Loading pets…', retry: 'Retry', currentPet: 'Current pet', showing: 'Visible on desktop', hidden: 'Hidden',
+  showPet: 'Show this pet', hidePet: 'Hide this pet', petLibrary: 'Pet library', dragHint: 'Drag cards to reorder', size: 'Pet size',
+  hideWhenIdle: 'Hide when idle', hideWhenIdleHint: 'Show again when a new task starts.', importTitle: 'Import a pet',
+  importHint: 'Enter the name at the end of a petdex.dev pet page. Imported pets become selected and visible.', petdexSlug: 'Petdex name',
+  import: 'Import', importing: 'Importing…', browsePetdex: 'Browse Petdex pets',
+  codexZipHint: 'You can also import a Codex pet ZIP, including Pocket Pet exported settings.', chooseZip: 'Choose ZIP',
 } satisfies Record<DesktopPetKey, string>

@@ -6,10 +6,12 @@ An optional desktop companion for [DeepSeek Harness](https://github.com/deepseek
 
 The pet acts as an ambient agent-status indicator: it relaxes when DSH is idle, thinks while the model reasons, works while tools run, waits when input is needed, and celebrates or frowns when a turn finishes.
 
-It is **not** a second chat UI, a task manager, or a full desktop app. It is a status indicator.
+It is an ambient status indicator with a complete Web pet console, so normal use does not require commands or YAML edits.
 
 - **Plugin-first**: a normal deepseek-harness plugin — no separately launched daemon, browser, or desktop app.
-- **Built-in Petdex import**: `/pet import <slug>` downloads an approved pet from the official Petdex API; normal rendering is local and has no telemetry.
+- **Configure in the UI**: preview, select, show/hide, resize, idle-hide, and drag-reorder pets from DSH Settings.
+- **Real multi-pet overlays**: each pet has its own window, position, size, and visibility, so pets can be shown and overlapped together.
+- **Two import paths**: enter a Petdex slug or upload a Codex / Pocket Pet ZIP. Imports become selected and visible immediately.
 - **Zero added LLM cost**: event → state resolution is fully deterministic.
 - **Runtime-discovered pets**: pets under `assets/pets/` are discovered at startup, so adding a pet is dropping a folder in — no rebuild.
 
@@ -46,7 +48,7 @@ Pack the plugin, then install the tarball:
 
 ```sh
 npm pack
-dsh plugin --profile <name> add /path/to/ysyyhhh-dsh-pet-0.2.0.tgz
+dsh plugin --profile <name> add /path/to/ysyyhhh-dsh-pet-0.3.0.tgz
 ```
 
 ### From a Git repository
@@ -68,9 +70,8 @@ dsh --profile <name>
 > with `pnpm` — i.e. run `pnpm dsh plugin ...` and `pnpm dsh ...` from the
 > Harness repository.
 
-> The settings card requires Harness to expose the `dsh-pet` settings
-> namespace (via its `WEB_SETTINGS_NAMESPACES` allowlist). The pet window itself
-> does not depend on that allowlist.
+> The settings card uses the plugin's same-origin `/dsh-pet/*` API and does not
+> depend on Harness's settings-namespace allowlist.
 
 ### Enable / disable
 
@@ -83,7 +84,9 @@ Harness fully functional.
 ## Codex pet compatibility and Petdex import
 
 The plugin reads the same Codex pet package shape used by Petdex: a `pet.json`
-manifest plus a WebP or PNG sprite sheet. Use the built-in commands from DSH:
+manifest plus a WebP or PNG sprite sheet. In DSH Settings → Plugins → DSH Pet,
+enter a Petdex slug or upload a Codex / Pocket Pet ZIP. Commands remain available
+for development and recovery:
 
 ```text
 /pet import boba     # download, validate, install, and select from petdex.dev
@@ -114,7 +117,7 @@ Linux per-pixel transparency needs a running compositor (GNOME/KDE ship one by d
 
 ## Configuration
 
-All fields are optional and validated with a Schemastery schema (invalid values fail loudly at load). The user-editable fields (`enabled`, `petScale`, `petId`, `hideWhenIdle`) are exposed on the Web settings card.
+Composition fields are validated with Schemastery. Per-pet visibility, size, position, idle hiding, and order are saved independently in `~/.dsh/dsh-pet/state.json` by the Web console.
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -141,7 +144,7 @@ Example:
         idleFrequencySec: 30
 ```
 
-Window position is persisted privately under `~/.dsh/dsh-pet/position.json` (best-effort; failures are ignored). It does not depend on any Harness storage service.
+Legacy single-window values are migrated on first run. Current per-pet state is stored in `~/.dsh/dsh-pet/state.json` without depending on the Harness settings service.
 
 ### Developer mode
 
@@ -179,7 +182,7 @@ renderer/codex-pet/  PetContract · PetLoader   (pet.json + sprite sheet)
 - **`HarnessBridge`** is the only module that knows raw harness event names. Everything above it is harness-independent.
 - **Pet core** (`core/`) is a standalone library: testable with no harness, no window, no network.
 - **Backends** are platform-isolated behind `WindowBackend`; the renderer never sees Win32 or X11 details.
-- **Client half** (`src/client/`) is a separate browser bundle registered through the harness module loader; the host and client halves communicate through the settings namespace.
+- **Client half** (`src/client/`) is a separate browser bundle registered through the harness module loader; it uses the plugin's same-origin HTTP API for state, previews, and imports.
 
 ### Harness dependencies
 
@@ -188,7 +191,7 @@ Only the Cordis plugin lifecycle and these **core** services/events are used:
 - Plugin entry: `apply(ctx, config)` + `name` / `inject` / `Config`.
 - Lifecycle: `ctx.effect()`, `ctx.on()`, `ctx.logger(name)`.
 - Activity observation: `session/event`, `agent/status`.
-- Settings: the `dsh-pet` settings namespace (host-side), bound by the client card.
+- Web console: the core `webServer` service. The pet window and commands still work if it is absent.
 - Optional (detected, not required): `ctx.agents`, `ctx.sessions`, `ctx.approval`, `ctx.commands`.
 
 No non-core plugin is required. If an optional service is absent, the pet degrades gracefully (coarser states, no `/pet` command).
@@ -201,6 +204,7 @@ No non-core plugin is required. If an optional service is absent, the pet degrad
 | `sharp` | Decode WebP/PNG sprite sheets to RGBA | Node ≥22 |
 | `@deepseek-ai/schemastery` | Config schema validation | Node ≥22 |
 | `clsx` | Class-name helper for the client card (inlined into the browser bundle) | build |
+| `fflate` | Safely read Codex / Pocket Pet ZIP packages | Node ≥22 |
 
 Peer (type-only, not bundled): `@deepseek-ai/cordis`.
 

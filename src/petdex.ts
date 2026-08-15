@@ -42,7 +42,7 @@ function trustedAssetUrl(raw: string): URL {
 }
 
 async function download(fetchImpl: typeof fetch, url: URL, maxBytes: number): Promise<Uint8Array> {
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(20_000) })
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(60_000) })
   if (!response.ok) throw new Error(`Download failed (${response.status})`)
   const declared = Number(response.headers.get('content-length') ?? 0)
   if (declared > maxBytes) throw new Error('Downloaded file is too large')
@@ -81,7 +81,7 @@ export async function importPetFromPetdex(slugInput: string, options: PetdexImpo
   if (!validSlug(slug)) throw new Error('Pet slug must contain only lowercase letters, numbers, and hyphens')
 
   const fetchImpl = options.fetchImpl ?? fetch
-  const response = await fetchImpl(MANIFEST_URL, { signal: AbortSignal.timeout(20_000) })
+  const response = await fetchImpl(MANIFEST_URL, { signal: AbortSignal.timeout(60_000) })
   if (!response.ok) throw new Error(`Could not load the Petdex catalog (${response.status})`)
   const manifest = await response.json() as PetdexManifest
   const entry = Array.isArray(manifest.pets) ? manifest.pets.find(pet => pet.slug === slug) : undefined

@@ -6,10 +6,12 @@
 
 桌宠会跟随 DSH 的工作状态：空闲时放松、模型推理时思考、执行工具时工作、等待输入时求关注，一轮任务结束时庆祝或失落。
 
-它**不是**第二个聊天界面，不是任务管理器，也不是完整的桌面应用。它是一个状态指示器。
+它既是状态指示器，也带有完整的 Web 桌宠控制台：不需要再手写命令或修改 YAML。
 
 - **插件优先**：就是一个普通的 deepseek-harness 插件——没有独立启动的守护进程、浏览器或桌面应用。
-- **内置 Petdex 导入**：`/pet import <slug>` 只从 Petdex 官方 API 下载已审核桌宠；平时渲染完全在本地完成且没有遥测。
+- **界面直接配置**：当前桌宠大预览、横向宠物库、逐只显示/隐藏、大小、空闲隐藏和拖动排序都在 DSH 设置页完成。
+- **真正的多桌宠**：每只桌宠拥有独立窗口、位置、大小与可见状态，可以同时显示并重叠。
+- **双通道导入**：界面可直接输入 Petdex slug，也可上传 Codex / 口袋桌宠 ZIP；导入后立即选中并显示。
 - **零额外 LLM 成本**：事件 → 状态的解析完全确定，不额外调用模型。
 - **运行时发现宠物**：`assets/pets/` 下的宠物在启动时自动发现，添加宠物就是放进一个文件夹——无需重新构建。
 
@@ -41,7 +43,7 @@ dsh plugin --profile web add D:/deepseek-pet
 
 ```sh
 npm pack
-dsh plugin --profile <name> add /path/to/ysyyhhh-dsh-pet-0.2.0.tgz
+dsh plugin --profile <name> add /path/to/ysyyhhh-dsh-pet-0.3.0.tgz
 ```
 
 ### 从 Git 仓库安装
@@ -60,7 +62,7 @@ dsh --profile <name>
 
 > 如果你是从 harness 仓库源码运行，请在 harness 仓库目录内把上面的命令加上 `pnpm` 前缀——即执行 `pnpm dsh plugin ...` 与 `pnpm dsh ...`。
 
-> 设置卡片需要 harness 暴露 `dsh-pet` 设置命名空间（通过其 `WEB_SETTINGS_NAMESPACES` 白名单）；宠物窗口本身不依赖该白名单。
+> 设置界面使用插件自有的同源 `/dsh-pet/*` API，不依赖 Harness 的设置命名空间白名单，因此可在当前 DSH Web 版本直接使用。
 
 ### 启用 / 停用
 
@@ -70,7 +72,13 @@ dsh --profile <name>
 
 ## Codex 桌宠兼容与 Petdex 导入
 
-插件读取 Codex / Petdex 通用的桌宠包：`pet.json` 清单，加一张 WebP 或 PNG 精灵图。直接在 DSH 中使用：
+插件读取 Codex / Petdex 通用的桌宠包：`pet.json` 清单，加一张 WebP 或 PNG 精灵图。在 DSH 设置 → 插件 → DSH 桌宠中可以：
+
+- 输入 Petdex 页面末尾的 slug 并直接导入。
+- 上传 Codex 桌宠 ZIP。
+- 上传口袋桌宠导出的 ZIP，并恢复其中可兼容的大小配置。
+
+命令仍可作为开发与故障排查入口：
 
 ```text
 /pet import boba     # 从 petdex.dev 下载、校验、安装并立即选中
@@ -98,7 +106,7 @@ Linux 的逐像素透明需要一个运行中的合成器（GNOME/KDE 默认自�
 
 ## 配置
 
-所有字段都可选，并用 Schemastery schema 校验（非法值会在加载时明确报错）。用户可编辑字段（`enabled`、`petScale`、`petId`、`hideWhenIdle`）会显示在 Web 设置卡片上。
+组合层字段仍用 Schemastery schema 校验。首次运行后，每只桌宠的可见状态、大小、位置、空闲隐藏和顺序会独立保存在 `~/.dsh/dsh-pet/state.json`，并由 Web 控制台即时写入。
 
 | 字段 | 默认值 | 说明 |
 |-------|---------|-------------|
@@ -125,7 +133,7 @@ Linux 的逐像素透明需要一个运行中的合成器（GNOME/KDE 默认自�
         idleFrequencySec: 30
 ```
 
-窗口位置私下持久化在 `~/.dsh/dsh-pet/position.json`（尽力而为，失败忽略），不依赖任何 Harness 存储服务。
+旧版的单窗口配置会在首次启动时迁移；之后统一使用 `~/.dsh/dsh-pet/state.json`，不依赖 Harness 设置服务。
 
 ### 开发者模式
 
@@ -163,7 +171,7 @@ renderer/codex-pet/  PetContract · PetLoader   （pet.json + 精灵图）
 - **`HarnessBridge`** 是唯一了解原始 harness 事件名的模块，其上的所有内容都与 harness 无关。
 - **宠物核心**（`core/`）是一个独立库：无需 harness、无需窗口、无需网络即可测试。
 - **后端** 在 `WindowBackend` 之后做平台隔离；渲染器永远看不到 Win32 或 X11 细节。
-- **客户端半**（`src/client/`）是一个单独的浏览器 bundle，通过 harness 模块加载器注册；宿主半与客户端半通过 settings namespace 通信。
+- **客户端半**（`src/client/`）是一个单独的浏览器 bundle，通过 harness 模块加载器注册；宿主半通过插件自有的同源 HTTP API 提供状态、预览和导入。
 
 ### Harness 依赖
 
@@ -172,7 +180,7 @@ renderer/codex-pet/  PetContract · PetLoader   （pet.json + 精灵图）
 - 插件入口：`apply(ctx, config)` + `name` / `inject` / `Config`。
 - 生命周期：`ctx.effect()`、`ctx.on()`、`ctx.logger(name)`。
 - 活动观察：`session/event`、`agent/status`。
-- 设置：`dsh-pet` settings namespace（宿主侧），由客户端卡片绑定。
+- Web 控制台：核心 `webServer` 服务；缺失时桌宠窗口与命令仍可工作。
 - 可选（探测、非必需）：`ctx.agents`、`ctx.sessions`、`ctx.approval`、`ctx.commands`。
 
 不需要任何非核心插件。可选服务缺失时插件会优雅降级（状态更粗略、没有 `/pet` 命令）。
@@ -185,6 +193,7 @@ renderer/codex-pet/  PetContract · PetLoader   （pet.json + 精灵图）
 | `sharp` | 把 WebP/PNG 精灵图解码为 RGBA | Node ≥22 |
 | `@deepseek-ai/schemastery` | 配置 schema 校验 | Node ≥22 |
 | `clsx` | 客户端卡片的类名辅助（内联进浏览器 bundle）| 构建期 |
+| `fflate` | 安全读取 Codex / 口袋桌宠 ZIP | Node ≥22 |
 
 Peer（仅类型、不打包）：`@deepseek-ai/cordis`。
 

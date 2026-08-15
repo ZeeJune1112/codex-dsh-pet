@@ -32,7 +32,7 @@ export interface CommandContext {
 interface CommandDefinition {
   name: string
   description: string
-  input?: { type: string }
+  input?: { hint: string }
   handler: (invocation: { rawInput: string; agent?: unknown; signal?: unknown }) => { kind: 'success' | 'error'; text: string } | Promise<{ kind: 'success' | 'error'; text: string }>
 }
 
@@ -54,7 +54,7 @@ export function registerPetCommand(ctx: CommandContext, host: PetDebugHost): () 
   ctx.commands.register({
     name: 'pet',
     description: 'Manage the DSH desktop pet, import from Petdex, or simulate a state.',
-    input: { type: 'string' },
+    input: { hint: '<state | list | import <slug> | use <id>>' },
     handler: async (invocation) => {
       const raw = (invocation.rawInput ?? '').trim()
       const [actionRaw = '', value = ''] = raw.split(/\s+/, 2)
@@ -70,7 +70,7 @@ export function registerPetCommand(ctx: CommandContext, host: PetDebugHost): () 
       }
       if (action === 'list') {
         const pets = host.listPets()
-        return { kind: 'success', text: pets.map(pet => `${pet.id} — ${pet.displayName}`).join('\n') }
+        return { kind: 'success', text: pets.map(pet => `${pet.id} - ${pet.displayName}`).join('\n') }
       }
       if (action === 'use' || action === 'select') {
         if (!value) return { kind: 'error', text: 'Usage: /pet use <pet-id>' }
