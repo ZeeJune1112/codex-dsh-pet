@@ -47,7 +47,7 @@ type Listener = (event: NormalizedEvent) => void
  * defensively when present.
  */
 export function createHarnessBridge(ctx: HarnessContext): HarnessBridge {
-  const log = ctx.logger('desktop-pet')
+  const log = ctx.logger('dsh-pet')
   const capabilities = detectCapabilities(ctx)
   const listeners = new Set<Listener>()
   const disposers: Disposable[] = []

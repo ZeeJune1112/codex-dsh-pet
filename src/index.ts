@@ -22,11 +22,12 @@ import type { NormalizedEvent, SemanticState } from './core/types'
 import { createHarnessBridge, type HarnessBridge, type HarnessContext } from './integration/HarnessBridge'
 import { loadPosition, savePosition } from './persistence'
 import { loadPetAtlas, scanPets } from './pets'
+import { importPetFromPetdex } from './petdex'
 import { installPetSettings, type PetSettingsHandle, type PetSettingsRegistrar, type PetSettingsSnapshot } from './settings'
 import { PetWindow } from './renderer/PetWindow'
 import { selectBackend } from './renderer/backend/selectBackend'
 
-export const name = 'desktop-pet'
+export const name = 'dsh-pet'
 export const inject: string[] = []
 
 export { Config }
@@ -42,7 +43,7 @@ interface PetContext extends HarnessContext {
 
 export function apply(ctx: Context, config: PetConfig): void {
   const petCtx = ctx as unknown as PetContext
-  const log = petCtx.logger('desktop-pet')
+  const log = petCtx.logger('dsh-pet')
 
   if (!config.enabled) {
     log.info('disabled by config; not starting')
@@ -189,6 +190,32 @@ export function apply(ctx: Context, config: PetConfig): void {
         debugState = undefined
         if (machine) applyVisibility(machine.state)
       },
+      async importPet(slug: string) {
+        const imported = await importPetFromPetdex(slug)
+        catalog = scanPets()
+        currentSettings = { ...currentSettings, petId: imported.slug, availablePets: catalog }
+        if (settingsHandle) {
+          await settingsHandle.update({ petId: imported.slug, availablePets: catalog })
+        } else {
+          await reconcile(currentSettings)
+        }
+        return { id: imported.slug, displayName: imported.displayName }
+      },
+      listPets() {
+        catalog = scanPets()
+        return catalog
+      },
+      async selectPet(id: string) {
+        catalog = scanPets()
+        if (!catalog.some(pet => pet.id === id)) return false
+        currentSettings = { ...currentSettings, petId: id, availablePets: catalog }
+        if (settingsHandle) {
+          await settingsHandle.update({ petId: id, availablePets: catalog })
+        } else {
+          await reconcile(currentSettings)
+        }
+        return true
+      },
     }
 
     // Sync: start the bridge (subscriptions are installed synchronously).
@@ -235,11 +262,12 @@ export function apply(ctx: Context, config: PetConfig): void {
           log.warn('settings reconcile failed: %s', (error as Error)?.message ?? String(error))
         })
       })
+      void settingsHandle.update({ availablePets: catalog })
     })
 
     // Initial window creation (runs even when no settings service exists).
     void reconcile(currentSettings).catch((error) => {
-      log.warn('desktop-pet startup failed: %s', (error as Error)?.message ?? String(error))
+      log.warn('dsh-pet startup failed: %s', (error as Error)?.message ?? String(error))
     })
 
     // Teardown (async so Cordis awaits window/native cleanup).

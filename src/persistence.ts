@@ -16,7 +16,7 @@ export interface PersistedPosition {
   y: number
 }
 
-const DIR = join(homedir(), '.dsh', 'desktop-pet')
+const DIR = join(homedir(), '.dsh', 'dsh-pet')
 const FILE = join(DIR, 'position.json')
 
 function safeDir(): void {

@@ -24,7 +24,7 @@ export type DesktopPetCardProps =
   & InjectFace<DesktopPetCardFace>
 
 /** GitHub repository path to the "adding a pet" guide. */
-const ADD_PET_DOC_URL = 'https://github.com/sereinmono/dsh-desktop-pet/blob/master/docs/adding-a-pet.md'
+const ADD_PET_DOC_URL = 'https://github.com/ysyyhhh/dsh-pet/blob/master/docs/adding-a-pet.md'
 
 /**
  * Render the desktop pet card.

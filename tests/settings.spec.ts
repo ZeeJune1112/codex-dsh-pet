@@ -42,7 +42,7 @@ describe('installPetSettings', () => {
     const { registrar } = makeRegistrar()
     const onApply = vi.fn()
     installPetSettings(registrar, base, onApply)
-    expect(registrar.register).toHaveBeenCalledWith('desktop-pet', PetSettingsSchema, { base })
+    expect(registrar.register).toHaveBeenCalledWith('dsh-pet', PetSettingsSchema, { base })
     expect(onApply).toHaveBeenCalledWith(base)
   })
 

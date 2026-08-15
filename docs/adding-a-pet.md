@@ -2,7 +2,7 @@
 
 English | [中文](adding-a-pet.zh.md)
 
-This guide explains how to add a new desktop pet to **dsh-desktop-pet**.
+This guide explains how to add a new desktop pet to **dsh-pet**.
 
 A pet is a directory containing a manifest (`pet.json`) and a sprite sheet
 (`spritesheet.webp` or `spritesheet.png`). The plugin scans `assets/pets/` at
@@ -39,45 +39,38 @@ the plugin so it appears in the settings pet picker.
 
 ```text
 Copy the existing directory <source-dir> (containing pet.json and
-spritesheet.webp) into <plugin-dir>/assets/pets/<id>/, then restart the plugin
+spritesheet.webp) into ~/.dsh/dsh-pet/pets/<id>/, then restart the plugin
 so it appears in the settings pet picker.
 ```
 
 **Manual steps:**
 
 1. Make sure `<source-dir>` contains `pet.json` and `spritesheet.webp` (or `.png`).
-2. Copy it into `<plugin-dir>/assets/pets/<id>/`. The directory name is the pet id.
+2. Copy it into `~/.dsh/dsh-pet/pets/<id>/`. The directory name is the pet id.
 3. Restart the plugin.
 4. Pick the new pet from the settings dropdown.
 
-### 3. Using the Petdex community
+### 3. Import directly from Petdex
 
-**Prompt:**
+From a DSH conversation, run:
 
 ```text
-Run "npx petdex install <slug>" to download a community pet, then copy the
-downloaded directory into <plugin-dir>/assets/pets/<slug>/ and restart the
-plugin so it appears in the pet picker.
+/pet import boba
 ```
 
-**Manual steps:**
-
-1. Run `npx petdex install <slug>`. Petdex is a third-party community; the pet
-   downloads into `~/.codex/pets/<slug>/`.
-2. Copy that directory into `<plugin-dir>/assets/pets/<slug>/`.
-3. Restart the plugin.
-4. Pick the new pet from the settings dropdown.
+The plugin uses Petdex's public approved-pet manifest, validates the downloaded
+Codex package, stores it under `~/.dsh/dsh-pet/pets/`, and selects it immediately.
 
 ## Pet directory structure
 
 ```text
-<plugin-dir>/assets/pets/<pet-id>/
+~/.dsh/dsh-pet/pets/<pet-id>/
 ├── pet.json          # manifest (id / displayName / description / spritesheetPath)
 └── spritesheet.webp  # sprite sheet (lossless WebP or PNG)
 ```
 
 > **Placeholders**
-> - `<plugin-dir>` — the directory of the installed `dsh-desktop-pet` package.
+> - `<plugin-dir>` — the directory of the installed `dsh-pet` package.
 > - `<pet-id>` / `<id>` / `<slug>` — the pet directory name (used as the pet id in the picker).
 > - `<source-dir>` — an existing directory that already contains the two files.
 

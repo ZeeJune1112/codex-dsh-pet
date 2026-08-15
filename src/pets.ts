@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PetCatalogEntry } from './config'
+import { userPetsDir } from './petdex'
 import { loadPet } from './renderer/codex-pet/PetLoader'
 import type { LoadedPet } from './renderer/codex-pet/PetLoader'
 import type { AtlasBuffer } from './renderer/FrameDecoder'
@@ -31,7 +32,7 @@ const FALLBACK_ENTRY: PetCatalogEntry = { id: 'text', displayName: 'Text (test)'
  *
  * @param directory - overrides the assets directory (used by tests).
  */
-export function scanPets(directory: string = ASSETS_DIR): PetCatalogEntry[] {
+function scanDirectory(directory: string): PetCatalogEntry[] {
   let entries: PetCatalogEntry[] = []
   try {
     const names = readdirSync(directory, { withFileTypes: true })
@@ -54,8 +55,18 @@ export function scanPets(directory: string = ASSETS_DIR): PetCatalogEntry[] {
     // Assets directory missing entirely; fall through to the fallback.
   }
 
-  if (entries.length === 0) entries = [FALLBACK_ENTRY]
   return entries
+}
+
+export function scanPets(directory?: string): PetCatalogEntry[] {
+  if (directory !== undefined) {
+    const entries = scanDirectory(directory)
+    return entries.length > 0 ? entries : [FALLBACK_ENTRY]
+  }
+  const byId = new Map<string, PetCatalogEntry>()
+  for (const entry of [...scanDirectory(ASSETS_DIR), ...scanDirectory(userPetsDir)]) byId.set(entry.id, entry)
+  const entries = [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName))
+  return entries.length > 0 ? entries : [FALLBACK_ENTRY]
 }
 
 function toAtlas(loaded: LoadedPet): AtlasBuffer {
@@ -64,6 +75,12 @@ function toAtlas(loaded: LoadedPet): AtlasBuffer {
 
 /** Load a pet by id (a directory name under `assets/pets/`) into an atlas. */
 export async function loadPetAtlas(petId: string): Promise<AtlasBuffer> {
-  const loaded = await loadPet({ directory: join(ASSETS_DIR, petId) })
+  let directory = join(userPetsDir, petId)
+  try {
+    await import('node:fs/promises').then(fs => fs.access(join(directory, 'pet.json')))
+  } catch {
+    directory = join(ASSETS_DIR, petId)
+  }
+  const loaded = await loadPet({ directory })
   return toAtlas(loaded)
 }

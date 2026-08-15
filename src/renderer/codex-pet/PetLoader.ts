@@ -11,7 +11,7 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { atlasSize, CELL_WIDTH, type PetManifest } from './PetContract'
 
 /** Decodes an image file into a premultiplied-free raw RGBA buffer. */
@@ -84,6 +84,10 @@ export async function loadPet(options: PetLoadOptions = {}): Promise<LoadedPet> 
   const version = manifest.spriteVersionNumber ?? 1
 
   const sheetPath = resolve(directory, manifest.spritesheetPath)
+  const relativeSheet = relative(directory, sheetPath)
+  if (relativeSheet.startsWith('..') || resolve(directory, relativeSheet) !== sheetPath) {
+    throw new Error('spritesheetPath must stay inside the pet directory')
+  }
   const { rgba, width, height } = await decoder(sheetPath)
 
   const expected = atlasSize(version)

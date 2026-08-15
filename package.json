@@ -1,7 +1,7 @@
 {
-  "name": "dsh-desktop-pet",
-  "version": "0.1.0",
-  "description": "An optional desktop companion for deepseek-harness that shows ambient status via a small animated pet.",
+  "name": "@ysyyhhh/dsh-pet",
+  "version": "0.2.0",
+  "description": "A DSH desktop pet compatible with Codex pet packages, with built-in Petdex import.",
   "type": "module",
   "license": "MIT",
   "main": "lib/index.js",
@@ -39,6 +39,7 @@
     }
   },
   "scripts": {
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build",
     "build": "tsdown",
     "typecheck": "tsc --noEmit",

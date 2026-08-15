@@ -23,7 +23,7 @@ export interface PetCatalogEntry {
 }
 
 /** Settings namespace name (spelled identically in the client package). */
-export const DESKTOP_PET_SETTINGS_NS = 'desktop-pet'
+export const DESKTOP_PET_SETTINGS_NS = 'dsh-pet'
 
 /** User-editable settings section exposed on the Web configuration page. */
 export interface PetSettings {

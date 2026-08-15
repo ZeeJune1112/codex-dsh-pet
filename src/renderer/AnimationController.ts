@@ -93,7 +93,7 @@ export class AnimationController {
       this.onFrame?.(scaled)
     } catch (error) {
       // A bad frame must not kill the animation loop.
-      if (typeof console !== 'undefined') console.warn('[desktop-pet] frame error:', (error as Error)?.message)
+      if (typeof console !== 'undefined') console.warn('[dsh-pet] frame error:', (error as Error)?.message)
     }
   }
 

@@ -2,8 +2,8 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'desktopPet.title': '桌面宠物',
-  'desktopPet.description': '控制桌面宠物的外观与可见性。',
+  'desktopPet.title': 'DSH 桌宠',
+  'desktopPet.description': '兼容 Codex 桌宠格式，可直接从 Petdex 导入。',
   'desktopPet.enabled': '显示宠物',
   'desktopPet.enabledHint': '在桌面上显示或隐藏宠物。',
   'desktopPet.hideWhenIdle': '无任务时自动隐藏',
@@ -12,7 +12,7 @@ export const zh = {
   'desktopPet.scaleHint': '调整宠物的大小（0.5–4 倍，步长 0.25）。',
   'desktopPet.pet': '宠物',
   'desktopPet.petHint': '选择要显示的宠物。',
-  'desktopPet.addPetLink': '如何添加宠物',
+  'desktopPet.addPetLink': 'Codex 桌宠与 Petdex 导入说明',
   'overridden': '已覆盖',
   'reset': '恢复默认',
   'readOnly': '本部署的设置为只读。',
@@ -30,8 +30,8 @@ export type DesktopPetKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'desktopPet.title': 'Desktop pet',
-  'desktopPet.description': 'Control the desktop pet\'s appearance and visibility.',
+  'desktopPet.title': 'DSH Pet',
+  'desktopPet.description': 'Codex pet compatible, with built-in Petdex import.',
   'desktopPet.enabled': 'Show pet',
   'desktopPet.enabledHint': 'Show or hide the pet on the desktop.',
   'desktopPet.hideWhenIdle': 'Hide when idle',
@@ -40,7 +40,7 @@ export const en = {
   'desktopPet.scaleHint': 'Adjust the pet size (0.5–4×, in 0.25 steps).',
   'desktopPet.pet': 'Pet',
   'desktopPet.petHint': 'Choose which pet to display.',
-  'desktopPet.addPetLink': 'How to add a pet',
+  'desktopPet.addPetLink': 'Codex pet and Petdex import guide',
   'overridden': 'Overridden',
   'reset': 'Reset to default',
   'readOnly': 'This deployment stores settings read-only.',

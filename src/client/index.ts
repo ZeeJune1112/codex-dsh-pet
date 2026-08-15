@@ -39,14 +39,14 @@ export const inject = ['slots', 'locale', 'settingsScope']
  * @param ctx - browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-desktop-pet: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-dsh-pet: dictionaries')
 
   const scope = ctx.settingsScope.bind<DesktopPetSettings>({ namespace: DESKTOP_PET_NS })
   const controller = new DesktopPetCardController(scope)
 
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
-    id: 'desktop-pet',
+    id: 'dsh-pet',
     order: 30,
     locale: NS,
     inject: () => controller.inject(),

@@ -1,13 +1,15 @@
-# dsh-desktop-pet
+# dsh-pet
 
 English | [中文](README.zh.md)
 
-An **optional desktop companion** for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness). It shows a small animated pet as an ambient status indicator: the pet relaxes when the harness is idle, "thinks" while the model reasons, "works" while tools run, waits when the harness needs input, and celebrates (or frowns) when a turn finishes.
+An optional desktop companion for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It is **compatible with Codex desktop-pet packages** (`pet.json` plus an 8×9 or 8×11 sprite sheet) and can **import pets directly from [Petdex](https://petdex.dev/)** without installing the Petdex CLI.
+
+The pet acts as an ambient agent-status indicator: it relaxes when DSH is idle, thinks while the model reasons, works while tools run, waits when input is needed, and celebrates or frowns when a turn finishes.
 
 It is **not** a second chat UI, a task manager, or a full desktop app. It is a status indicator.
 
 - **Plugin-first**: a normal deepseek-harness plugin — no separately launched daemon, browser, or desktop app.
-- **Zero network**: all assets ship with the plugin; no telemetry, CDN, or remote service.
+- **Built-in Petdex import**: `/pet import <slug>` downloads an approved pet from the official Petdex API; normal rendering is local and has no telemetry.
 - **Zero added LLM cost**: event → state resolution is fully deterministic.
 - **Runtime-discovered pets**: pets under `assets/pets/` are discovered at startup, so adding a pet is dropping a folder in — no rebuild.
 
@@ -20,19 +22,13 @@ and a client half (the settings card). `dsh plugin add` installs it and, because
 the manifest declares `dsh.bundle`, adds it to the profile's bundle list
 automatically.
 
-### From npm
-
-```sh
-dsh plugin --profile <name> add dsh-desktop-pet
-```
-
 ### From a local directory
 
 Install the plugin directly from its source directory (the profile keeps it as
 a `link:` dependency):
 
 ```sh
-dsh plugin --profile <name> add /path/to/dsh-desktop-pet
+dsh plugin --profile <name> add /path/to/dsh-pet
 ```
 
 On Windows, for example:
@@ -50,13 +46,13 @@ Pack the plugin, then install the tarball:
 
 ```sh
 npm pack
-dsh plugin --profile <name> add /path/to/dsh-desktop-pet-0.1.0.tgz
+dsh plugin --profile <name> add /path/to/ysyyhhh-dsh-pet-0.2.0.tgz
 ```
 
 ### From a Git repository
 
 ```sh
-dsh plugin --profile <name> add github:sereinmono/dsh-desktop-pet
+dsh plugin --profile <name> add github:ysyyhhh/dsh-pet
 ```
 
 If the repository does not commit build artifacts, configure a `prepare`
@@ -72,7 +68,7 @@ dsh --profile <name>
 > with `pnpm` — i.e. run `pnpm dsh plugin ...` and `pnpm dsh ...` from the
 > Harness repository.
 
-> The settings card requires Harness to expose the `desktop-pet` settings
+> The settings card requires Harness to expose the `dsh-pet` settings
 > namespace (via its `WEB_SETTINGS_NAMESPACES` allowlist). The pet window itself
 > does not depend on that allowlist.
 
@@ -84,15 +80,19 @@ Harness fully functional.
 
 ---
 
-## Adding a pet
+## Codex pet compatibility and Petdex import
 
-Pets are plain folders following a fixed sprite-sheet format. Three common ways
-to obtain one are covered in the dedicated guide, each with a copy-paste prompt
-and manual steps:
+The plugin reads the same Codex pet package shape used by Petdex: a `pet.json`
+manifest plus a WebP or PNG sprite sheet. Use the built-in commands from DSH:
 
-- **hatch-pet** — generate a pet with the skill, then drop its output folder into `assets/pets/`.
-- **Import an existing folder** — copy a folder containing `pet.json` + `spritesheet.webp` into `assets/pets/`.
-- **Petdex community** — download a community pet and copy it in.
+```text
+/pet import boba     # download, validate, install, and select from petdex.dev
+/pet list            # list bundled and imported pets
+/pet use boba        # select an installed pet
+```
+
+Imported pets persist under `~/.dsh/dsh-pet/pets/`, so plugin upgrades do not
+remove them. You can also copy any compatible Codex pet folder there manually.
 
 See **[Adding a Pet](docs/adding-a-pet.md)** for the full walkthrough, and the
 **[asset format reference](docs/adding-a-pet.md#asset-format-reference)** for the
@@ -133,19 +133,19 @@ Example:
 
 ```yaml
 - insert:
-    - id: desktop-pet
-      name: dsh-desktop-pet
+    - id: dsh-pet
+      name: "@ysyyhhh/dsh-pet"
       config:
         petScale: 1
         petId: text
         idleFrequencySec: 30
 ```
 
-Window position is persisted privately under `~/.dsh/desktop-pet/position.json` (best-effort; failures are ignored). It does not depend on any Harness storage service.
+Window position is persisted privately under `~/.dsh/dsh-pet/position.json` (best-effort; failures are ignored). It does not depend on any Harness storage service.
 
 ### Developer mode
 
-When the core `ctx.commands` service is present, the plugin registers a `/pet <state>` command to simulate states without any LLM:
+When the core `ctx.commands` service is present, the plugin also accepts renderer-state commands without invoking an LLM:
 
 ```text
 /pet thinking
@@ -188,7 +188,7 @@ Only the Cordis plugin lifecycle and these **core** services/events are used:
 - Plugin entry: `apply(ctx, config)` + `name` / `inject` / `Config`.
 - Lifecycle: `ctx.effect()`, `ctx.on()`, `ctx.logger(name)`.
 - Activity observation: `session/event`, `agent/status`.
-- Settings: the `desktop-pet` settings namespace (host-side), bound by the client card.
+- Settings: the `dsh-pet` settings namespace (host-side), bound by the client card.
 - Optional (detected, not required): `ctx.agents`, `ctx.sessions`, `ctx.approval`, `ctx.commands`.
 
 No non-core plugin is required. If an optional service is absent, the pet degrades gracefully (coarser states, no `/pet` command).
@@ -247,36 +247,6 @@ npm run gen:assets     # regenerate the bundled text pet
 ```
 
 The pet core is tested without a harness or a display. The native overlay backends require a real desktop session and are **not** exercised by the headless test suite — they need manual verification on Windows/Linux.
-
----
-
-## Publishing
-
-Publishing to npm is automated with GitHub Actions via **npm Trusted
-Publishing** (OIDC): GitHub mints an id token and npm publishes on its behalf,
-so the workflow needs no `NODE_AUTH_TOKEN` secret. A `v*` tag pushed to
-`master` triggers `npm ci → typecheck → test → build → npm publish
---provenance`.
-
-**One-time setup on npm** (do this before the first tag push):
-
-1. The package must already exist on npm. Publish `0.1.0` once with a manual
-   token (`npm publish --access public`) — Trusted Publishing is configured per
-   package, so an npmjs package page must exist first.
-2. On the npmjs package page, enable **Trusted Publishing** and authorize this
-   repository: owner `sereinmono`, repository `dsh-desktop-pet`. Pin the
-   workflow `publish.yml` and branch `master` if the form offers it.
-
-**Release locally** — bump the version, tag, and push the tag:
-
-```sh
-npm version patch   # or minor / major; creates vX.Y.Z tag
-git push origin master --tags
-```
-
-The workflow runs only when the tag's commit is on `master`; tags on other
-branches are skipped. A manual backup entry is available at
-Actions → Publish → Run workflow (the tag must still be on `master`).
 
 ---
 

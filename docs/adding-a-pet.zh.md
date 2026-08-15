@@ -2,7 +2,7 @@
 
 [English](adding-a-pet.md) | 中文
 
-本文说明如何向 **dsh-desktop-pet** 添加一个新的桌面宠物。
+本文说明如何向 **dsh-pet** 添加一个新的桌面宠物。
 
 一个宠物就是一个目录，内含一个清单文件 `pet.json` 和一张精灵图
 `spritesheet.webp`（或 `.png`）。插件启动时会扫描 `assets/pets/`，把发现的每个宠物
@@ -42,37 +42,31 @@
 **手动步骤：**
 
 1. 确认 `<源目录>` 内含 `pet.json` 和 `spritesheet.webp`（或 `.png`）。
-2. 复制到 `<插件目录>/assets/pets/<目录名>/`。目录名即宠物 id。
+2. 复制到 `~/.dsh/dsh-pet/pets/<目录名>/`。目录名即宠物 id。
 3. 重启插件。
 4. 在设置页宠物下拉列表里选择新宠物。
 
-### 3. 使用 Petdex 社区
+### 3. 直接从 Petdex 导入
 
-**Prompt：**
+在 DSH 对话中运行：
 
 ```text
-运行 npx petdex install <slug> 下载社区宠物，然后把下载目录（含 pet.json 和
-spritesheet.webp）复制到 <插件目录>/assets/pets/<slug>/，重启插件后自动出现在宠物下拉列表。
+/pet import boba
 ```
 
-**手动步骤：**
-
-1. 运行 `npx petdex install <slug>`。Petdex 是第三方社区，宠物会下载到
-   `~/.codex/pets/<slug>/`。
-2. 把该目录复制到 `<插件目录>/assets/pets/<slug>/`。
-3. 重启插件。
-4. 在设置页宠物下拉列表里选择新宠物。
+插件会读取 Petdex 公开的已审核桌宠清单，下载并校验 Codex 桌宠包，保存到
+`~/.dsh/dsh-pet/pets/`，然后立即选中。
 
 ## 宠物目录结构
 
 ```text
-<插件目录>/assets/pets/<目录名>/
+~/.dsh/dsh-pet/pets/<目录名>/
 ├── pet.json          # 清单文件（id / displayName / description / spritesheetPath）
 └── spritesheet.webp  # 精灵图（无损 WebP 或 PNG）
 ```
 
 > **占位符说明**
-> - `<插件目录>` — 已安装的 `dsh-desktop-pet` 包所在目录。
+> - `<插件目录>` — 已安装的 `dsh-pet` 包所在目录。
 > - `<目录名>` / `<id>` / `<slug>` — 宠物目录名（下拉列表里作为宠物 id 使用）。
 > - `<源目录>` — 一个已包含上述两个文件的现有目录。
 

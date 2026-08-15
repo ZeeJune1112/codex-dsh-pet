@@ -12,7 +12,7 @@ import type { SettingsScope, SnapshotStore } from '@deepseek-ai/dsh-client-runti
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** Settings namespace owned by the host-side desktop-pet plugin. */
-export const DESKTOP_PET_NS = 'desktop-pet'
+export const DESKTOP_PET_NS = 'dsh-pet'
 
 /** Minimum / maximum / step of the pet size, mirrored by the Host schema. */
 export const PET_SCALE_MIN = 0.5

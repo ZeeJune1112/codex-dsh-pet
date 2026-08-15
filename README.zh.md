@@ -1,13 +1,15 @@
-# dsh-desktop-pet
+# dsh-pet
 
 [English](README.md) | 中文
 
-**dsh-desktop-pet** 是 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 的一个**可选桌面伴侣**插件。它用一个小动画宠物作为环境状态指示器：harness 空闲时宠物放松，模型推理时"思考"，执行工具时"工作"，等待输入时"求关注"，一轮任务结束时庆祝（或皱眉）。
+**dsh-pet** 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的可选桌宠插件。它**兼容 Codex 桌宠格式**（`pet.json` + 8×9 或 8×11 精灵图），并且可以**直接在插件内从 [Petdex](https://petdex.dev/) 导入桌宠**，不需要额外安装 Petdex CLI。
+
+桌宠会跟随 DSH 的工作状态：空闲时放松、模型推理时思考、执行工具时工作、等待输入时求关注，一轮任务结束时庆祝或失落。
 
 它**不是**第二个聊天界面，不是任务管理器，也不是完整的桌面应用。它是一个状态指示器。
 
 - **插件优先**：就是一个普通的 deepseek-harness 插件——没有独立启动的守护进程、浏览器或桌面应用。
-- **零网络**：所有资源随插件发布；无遥测、无 CDN、无远程服务。
+- **内置 Petdex 导入**：`/pet import <slug>` 只从 Petdex 官方 API 下载已审核桌宠；平时渲染完全在本地完成且没有遥测。
 - **零额外 LLM 成本**：事件 → 状态的解析完全确定，不额外调用模型。
 - **运行时发现宠物**：`assets/pets/` 下的宠物在启动时自动发现，添加宠物就是放进一个文件夹——无需重新构建。
 
@@ -17,18 +19,12 @@
 
 插件是一个同时包含宿主半（宠物窗口）和客户端半（设置卡片）的 Cordis **组合包**。`dsh plugin add` 会安装它，并因清单里声明了 `dsh.bundle` 而自动把它加入 profile 的 bundle 列表。
 
-### 从 npm 安装
-
-```sh
-dsh plugin --profile <name> add dsh-desktop-pet
-```
-
 ### 从本地目录安装
 
 直接从插件源码目录安装（profile 会把它作为 `link:` 依赖保留）：
 
 ```sh
-dsh plugin --profile <name> add /path/to/dsh-desktop-pet
+dsh plugin --profile <name> add /path/to/dsh-pet
 ```
 
 Windows 下示例：
@@ -45,13 +41,13 @@ dsh plugin --profile web add D:/deepseek-pet
 
 ```sh
 npm pack
-dsh plugin --profile <name> add /path/to/dsh-desktop-pet-0.1.0.tgz
+dsh plugin --profile <name> add /path/to/ysyyhhh-dsh-pet-0.2.0.tgz
 ```
 
 ### 从 Git 仓库安装
 
 ```sh
-dsh plugin --profile <name> add github:sereinmono/dsh-desktop-pet
+dsh plugin --profile <name> add github:ysyyhhh/dsh-pet
 ```
 
 如果仓库未提交构建产物，请配置 `prepare` 脚本，让 `dsh plugin add` 在安装时构建插件。
@@ -64,7 +60,7 @@ dsh --profile <name>
 
 > 如果你是从 harness 仓库源码运行，请在 harness 仓库目录内把上面的命令加上 `pnpm` 前缀——即执行 `pnpm dsh plugin ...` 与 `pnpm dsh ...`。
 
-> 设置卡片需要 harness 暴露 `desktop-pet` 设置命名空间（通过其 `WEB_SETTINGS_NAMESPACES` 白名单）；宠物窗口本身不依赖该白名单。
+> 设置卡片需要 harness 暴露 `dsh-pet` 设置命名空间（通过其 `WEB_SETTINGS_NAMESPACES` 白名单）；宠物窗口本身不依赖该白名单。
 
 ### 启用 / 停用
 
@@ -72,13 +68,17 @@ dsh --profile <name>
 
 ---
 
-## 添加宠物
+## Codex 桌宠兼容与 Petdex 导入
 
-宠物是遵循固定精灵图格式的普通文件夹。专属指南里介绍了三种常见的获取方式，每种都配有可复制的 prompt 和手动步骤：
+插件读取 Codex / Petdex 通用的桌宠包：`pet.json` 清单，加一张 WebP 或 PNG 精灵图。直接在 DSH 中使用：
 
-- **hatch-pet** —— 用技能生成宠物，然后把输出文件夹放进 `assets/pets/`。
-- **导入已有文件夹** —— 把含 `pet.json` + `spritesheet.webp` 的文件夹复制进 `assets/pets/`。
-- **Petdex 社区** —— 下载一个社区宠物并复制进去。
+```text
+/pet import boba     # 从 petdex.dev 下载、校验、安装并立即选中
+/pet list            # 查看内置与已导入桌宠
+/pet use boba        # 切换到已安装桌宠
+```
+
+导入内容保存在 `~/.dsh/dsh-pet/pets/`，升级插件不会丢失。你也可以把任何兼容 Codex 格式的桌宠文件夹手动复制到这里。
 
 完整流程见 **[添加宠物](docs/adding-a-pet.zh.md)**，确切的 `pet.json` 与精灵图布局见 **[资源格式参考](docs/adding-a-pet.zh.md#资源格式参考)**。
 
@@ -117,15 +117,15 @@ Linux 的逐像素透明需要一个运行中的合成器（GNOME/KDE 默认自�
 
 ```yaml
 - insert:
-    - id: desktop-pet
-      name: dsh-desktop-pet
+    - id: dsh-pet
+      name: "@ysyyhhh/dsh-pet"
       config:
         petScale: 1
         petId: text
         idleFrequencySec: 30
 ```
 
-窗口位置私下持久化在 `~/.dsh/desktop-pet/position.json`（尽力而为，失败忽略），不依赖任何 Harness 存储服务。
+窗口位置私下持久化在 `~/.dsh/dsh-pet/position.json`（尽力而为，失败忽略），不依赖任何 Harness 存储服务。
 
 ### 开发者模式
 
@@ -172,7 +172,7 @@ renderer/codex-pet/  PetContract · PetLoader   （pet.json + 精灵图）
 - 插件入口：`apply(ctx, config)` + `name` / `inject` / `Config`。
 - 生命周期：`ctx.effect()`、`ctx.on()`、`ctx.logger(name)`。
 - 活动观察：`session/event`、`agent/status`。
-- 设置：`desktop-pet` settings namespace（宿主侧），由客户端卡片绑定。
+- 设置：`dsh-pet` settings namespace（宿主侧），由客户端卡片绑定。
 - 可选（探测、非必需）：`ctx.agents`、`ctx.sessions`、`ctx.approval`、`ctx.commands`。
 
 不需要任何非核心插件。可选服务缺失时插件会优雅降级（状态更粗略、没有 `/pet` 命令）。
@@ -228,26 +228,6 @@ npm run gen:assets      # 重新生成内置的 text 宠物
 ```
 
 宠物核心在无 harness、无显示环境的情况下测试。原生悬浮层后端需要真实桌面会话，**不**在无头测试套件中运行——需在 Windows/Linux 上人工验证。
-
----
-
-## 发布
-
-发布到 npm 已由 GitHub Actions 通过 **npm Trusted Publishing（OIDC）** 自动化：GitHub 签发 id token，npm 据此代表仓库发布，因此工作流**无需 `NODE_AUTH_TOKEN` secret**。向 `master` 推送 `v*` tag 会触发 `npm ci → typecheck → test → build → npm publish --provenance`。
-
-**在 npm 上的一次性配置**（首次推送 tag 之前完成）：
-
-1. 该包必须已存在于 npm。先用手动 token 发布一次 `0.1.0`（`npm publish --access public`）——Trusted Publishing 是按包配置的，所以必须先有 npmjs 包页面。
-2. 在 npmjs 包页面启用 **Trusted Publishing** 并授权本仓库：owner `sereinmono`、repository `dsh-desktop-pet`。若表单允许，可将 workflow 固定为 `publish.yml`、分支固定为 `master`。
-
-**本地发布** —— 提升版本、打 tag 并推送 tag：
-
-```sh
-npm version patch   # 或 minor / major；会创建 vX.Y.Z tag
-git push origin master --tags
-```
-
-工作流只在 tag 指向的提交位于 `master` 上时发布；其他分支的 tag 会被跳过。手动备份入口在 Actions → Publish → Run workflow（该 tag 仍须位于 `master`）。
 
 ---
 
