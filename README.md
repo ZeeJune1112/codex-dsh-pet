@@ -8,7 +8,7 @@ The pet acts as an ambient agent-status indicator: it relaxes when DSH is idle, 
 
 It is an ambient status indicator with a complete Web pet console, so normal use does not require commands or YAML edits.
 
-- **Plugin-first**: a normal deepseek-harness plugin — no separately launched daemon, browser, or desktop app.
+- **Plugin-first**: a normal deepseek-harness plugin, with a standalone Windows host for running the bundled pet without Harness.
 - **Configure in the UI**: preview, select, show/hide, resize, idle-hide, and drag-reorder pets from DSH Settings.
 - **Real multi-pet overlays**: each pet has its own window, position, size, and visibility, so pets can be shown and overlapped together.
 - **Two import paths**: enter a Petdex slug or upload a Codex / Pocket Pet ZIP. Imports become selected and visible immediately.
@@ -65,6 +65,14 @@ script so `dsh plugin add` builds the plugin during install.
 ```sh
 dsh --profile <name>
 ```
+
+To run the bundled text pet as its own Windows 11 host (Node 22/npm):
+
+```sh
+npm run start:host
+```
+
+The host stores its position, scale, and single-instance lock under `%LOCALAPPDATA%\\codex-dsh-pet`.
 
 > If you are running Harness from a source checkout, prefix the commands above
 > with `pnpm` — i.e. run `pnpm dsh plugin ...` and `pnpm dsh ...` from the

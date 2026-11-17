@@ -8,7 +8,7 @@
 
 它既是状态指示器，也带有完整的 Web 桌宠控制台：不需要再手写命令或修改 YAML。
 
-- **插件优先**：就是一个普通的 deepseek-harness 插件——没有独立启动的守护进程、浏览器或桌面应用。
+- **插件优先**：就是一个普通的 deepseek-harness 插件，同时提供无需 Harness 的独立 Windows 宿主来运行内置桌宠。
 - **界面直接配置**：当前桌宠大预览、横向宠物库、逐只显示/隐藏、大小、空闲隐藏和拖动排序都在 DSH 设置页完成。
 - **真正的多桌宠**：每只桌宠拥有独立窗口、位置、大小与可见状态，可以同时显示并重叠。
 - **双通道导入**：界面可直接输入 Petdex slug，也可上传 Codex / 口袋桌宠 ZIP；导入后立即选中并显示。
@@ -59,6 +59,14 @@ dsh plugin --profile <name> add github:ysyyhhh/dsh-pet
 ```sh
 dsh --profile <name>
 ```
+
+也可以使用 Node 22/npm 单独启动内置文字宠物宿主（Windows 11）：
+
+```sh
+npm run start:host
+```
+
+宿主会把位置、缩放和单实例锁保存在 `%LOCALAPPDATA%\\codex-dsh-pet`。
 
 > 如果你是从 harness 仓库源码运行，请在 harness 仓库目录内把上面的命令加上 `pnpm` 前缀——即执行 `pnpm dsh plugin ...` 与 `pnpm dsh ...`。
 
