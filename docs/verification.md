@@ -10,7 +10,7 @@ Environment observed: Windows 11 x64, NT build 26200; Node 22.23.2, npm 10.9.8.
 The integration baseline before this verification patch was `69940e1`; the
 upstream baseline and scoped patches are in [upstream-sync.md](upstream-sync.md).
 This patch passed 129 tests in 24 files, both typechecks, build, all five
-verification scripts (including native), and package dry-run on that Windows
+verification commands (including native), and package dry-run on that Windows
 environment. The baseline `LICENSE` and `assets` trees are unchanged. A separate
 fresh native child signalled readiness and accepted its first synthetic event
 in 649 ms in one observed run, then the authenticated manager quit it; this
