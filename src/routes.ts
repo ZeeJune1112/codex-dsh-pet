@@ -11,12 +11,14 @@ function method(request: IncomingMessage, response: ServerResponse, expected: 'G
   return false
 }
 
-export function mountPetRoutes(host: RouteHost, runtime: PetRuntime): () => void {
+export type PetRouteOperations = Pick<PetRuntime, 'snapshot' | 'preview' | 'updatePet' | 'select' | 'reorder' | 'importPetdex' | 'importCodexZip'>
+export function mountPetRoutes(host: RouteHost, runtime: PetRouteOperations): () => void {
   const handlePost = (fn: (body: Record<string, unknown>) => Promise<unknown>) => async (request: IncomingMessage, response: ServerResponse) => {
     if (!method(request, response, 'POST')) return
     if (!sameOrigin(request)) return sendJson(response, 403, { error: 'same-origin request required' })
     try {
       const body = await readJsonBody(request) as Record<string, unknown>
+      if (!body || Array.isArray(body) || typeof body !== 'object') throw new Error('JSON object required')
       sendJson(response, 200, await fn(body))
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
@@ -25,7 +27,7 @@ export function mountPetRoutes(host: RouteHost, runtime: PetRuntime): () => void
 
   const disposers = [
     host.webServer.register({
-      kind: 'exact', path: '/dsh-pet/state', handler: (_request, response) => sendJson(response, 200, runtime.snapshot()),
+      kind: 'exact', path: '/dsh-pet/state', handler: (request, response) => { if (method(request, response, 'GET')) sendJson(response, 200, runtime.snapshot()) },
     }),
     host.webServer.register({
       kind: 'exact', path: '/dsh-pet/preview', handler: async (request, response) => {
@@ -33,7 +35,7 @@ export function mountPetRoutes(host: RouteHost, runtime: PetRuntime): () => void
         try {
           const id = new URL(request.url ?? '', 'http://localhost').searchParams.get('id') ?? ''
           const png = await runtime.preview(id)
-          response.writeHead(200, { 'cache-control': 'private, max-age=3600', 'content-type': 'image/png' })
+          response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'image/png' })
           response.end(png)
         } catch (error) {
           sendJson(response, 404, { error: error instanceof Error ? error.message : String(error) })
@@ -43,7 +45,8 @@ export function mountPetRoutes(host: RouteHost, runtime: PetRuntime): () => void
     host.webServer.register({
       kind: 'exact', path: '/dsh-pet/update', handler: handlePost(async body => {
         if (typeof body.id !== 'string') throw new Error('id is required')
-        const patch = typeof body.patch === 'object' && body.patch !== null ? body.patch : {}
+        if (typeof body.patch !== 'object' || body.patch === null || Array.isArray(body.patch)) throw new Error('patch object is required')
+        const patch = body.patch
         return runtime.updatePet(body.id, patch)
       }),
     }),

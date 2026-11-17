@@ -36,7 +36,8 @@ export interface PetLoadOptions {
 /** Default decoder backed by `sharp` (lazily imported). */
 export const sharpDecoder: AtlasDecoder = async (path) => {
   const { default: sharp } = await import('sharp')
-  const { data, info } = await sharp(path)
+  // Decode bytes so Windows can rename/roll back role directories immediately after validation.
+  const { data, info } = await sharp(await readFile(path))
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true })

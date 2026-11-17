@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
 import { Unzip, UnzipInflate, unzipSync } from 'fflate'
 import { userPetsDir } from './petdex'
@@ -119,17 +119,11 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
         return { rgba: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height }
       },
     })
-    try { await mkdir(target) } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('Pet is already installed or being imported')
+    try { await rename(staging, target) } catch (error) {
+      if (await stat(target).then(() => true, () => false)) throw new Error('Pet is already installed or being imported')
       throw error
     }
     ownsTarget = true
-    for (const relative of packageNames) {
-      if (!safeEntry(relative) || relative.endsWith('/')) continue
-      const out = join(target, ...relative.split('/'))
-      await mkdir(dirname(out), { recursive: true })
-      await writeFile(out, relative === 'pet.json' ? JSON.stringify(manifest, null, 2) : archive[root + relative])
-    }
     const configName = packageNames.find(name => posix.basename(name).toLowerCase() === 'pocket-pet-config.json')
     let config: Record<string, unknown> | undefined
     if (configName) {

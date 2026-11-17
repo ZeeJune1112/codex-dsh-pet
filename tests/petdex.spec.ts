@@ -66,3 +66,16 @@ describe('importPetFromPetdex', () => {
     await expect(importPetFromPetdex('../boba', { fetchImpl })).rejects.toThrow('Pet slug')
   })
 })
+
+it('bounds Petdex responses while streaming and disables redirects before fetching assets', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-petdex-bounds-'))
+  let chunks = 0
+  const fetchImpl: typeof fetch = async (_input, options) => {
+    expect(options?.redirect).toBe('error')
+    return new Response(new ReadableStream({ pull(controller) { chunks++; controller.enqueue(new Uint8Array(1024 * 1024)); if (chunks === 30) controller.close() } }))
+  }
+  try {
+    await expect(importPetFromPetdex('boba', { directory: root, fetchImpl })).rejects.toThrow(/large/i)
+    expect(chunks).toBeLessThan(30)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
