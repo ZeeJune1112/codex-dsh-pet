@@ -1,11 +1,12 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request } from 'node:http'
 import { DesktopPetHost } from '../src/standalone'
-import { HostStorage } from '../src/host/persistence'
+import { acquireInstanceLock, HostStorage } from '../src/host/persistence'
 import { ManagementServer } from '../src/management/server'
+import * as petApi from '../src/pet-api'
 import sharp from 'sharp'
 
 const cleanup: Array<() => Promise<unknown>> = []
@@ -15,7 +16,7 @@ async function setup(now?: () => number) {
   cleanup.push(() => rm(directory, { recursive: true, force: true, maxRetries: 4 }))
   const handles: any[] = []
   const backend = { name: 'test', isSupported: () => true, async create(options: unknown) {
-    const handle = { options, shown: true, frames: 0, present() { this.frames++ }, move() {}, setAlwaysOnTop() {}, show() { this.shown = true }, hide() { this.shown = false }, destroy() {} }
+    const handle = { options, shown: true, destroyed: false, frames: 0, present() { this.frames++ }, move() {}, setAlwaysOnTop() {}, show() { this.shown = true }, hide() { this.shown = false }, destroy() { this.destroyed = true } }
     handles.push(handle); return handle
   } }
   const storage = new HostStorage(directory)
@@ -28,6 +29,34 @@ async function setup(now?: () => number) {
   const post = (path: string, body: unknown) => fetch(endpoint(`/dsh-pet/${path}`), { method: 'POST', headers: { origin: url.origin, 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return { directory, storage, host, server, url, endpoint, post, handles }
 }
+it('shuts down windows and releases ownership even when an authenticated POST body is incomplete', async () => {
+  const { host, server, storage, handles } = await setup()
+  await server.stop()
+  const url = new URL(await host.startManagement())
+  let reading!: () => void
+  const startedReading = new Promise<void>(resolve => { reading = resolve })
+  const readBody = petApi.readJsonBody
+  const reader = vi.spyOn(petApi, 'readJsonBody').mockImplementation(async (...args) => {
+    reading()
+    return readBody(...args)
+  })
+  const req = request(`${url.origin}/dsh-pet/bind?${url.searchParams}`, {
+    method: 'POST', headers: { origin: url.origin, 'content-type': 'application/json', 'content-length': '100' },
+  })
+  req.on('error', () => {})
+  let stopping: Promise<void> | undefined
+  try {
+    req.write('{')
+    await startedReading
+    stopping = host.stop()
+    await expect(Promise.race([stopping.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 500))])).resolves.toBe(true)
+    expect(handles.every(handle => handle.destroyed)).toBe(true)
+    const lock = acquireInstanceLock(storage.lockPath)
+    lock.release()
+    expect(host.managementUrl).toBeUndefined()
+  } finally { req.destroy(); await stopping; reader.mockRestore() }
+})
+
 it('authenticates HTML, script, preview and API on a random loopback listener and rejects foreign origins/hosts', async () => {
   const { url, endpoint, post } = await setup()
   expect(url.hostname).toBe('127.0.0.1'); expect(Number(url.port)).toBeGreaterThan(0)
@@ -118,6 +147,32 @@ it('declines migration without writes, then migrates validated roles/settings on
   await post('migrate', { confirm: true })
   expect(await readFile(storage.statePath, 'utf8')).toBe(after)
 })
+it.each([false, true])('migrates legacy preferences as a separate instance even when the role already exists (configured: %s)', async configured => {
+  const { directory, post, host, storage } = await setup()
+  const { mkdir, writeFile, readFile } = await import('node:fs/promises')
+  const original = host.getSnapshot()[0].id
+  if (configured) {
+    await host.updateInstance(original, { scale: 3 })
+    host.bindInstance(original, 'keep-downstream-chat')
+  }
+  const before = host.getSnapshot()[0]
+  const legacy = join(directory, 'legacy')
+  await mkdir(legacy)
+  const preferences = { scale: 2, position: { x: 310, y: 270 }, visible: false, hideWhenIdle: true }
+  await writeFile(join(legacy, 'state.json'), JSON.stringify({ version: 1, selectedPetId: 'text', order: ['text'], pets: { text: preferences } }))
+  const response = await post('migrate', { confirm: true })
+  expect(response.status).toBe(200)
+  const state = await response.json() as any
+  expect(state.migration).toBe('completed')
+  expect(state.pets).toHaveLength(2)
+  expect(host.getSnapshot().find(pet => pet.id === original)).toEqual(before)
+  expect(state.pets.find((pet: any) => pet.id !== original)).toMatchObject({ roleId: 'text', ...preferences, availability: 'unbound' })
+  const saved = await readFile(storage.statePath, 'utf8')
+  expect(storage.load().instances.find(pet => pet.id !== original)).toMatchObject(preferences)
+  expect((await post('migrate', { confirm: true })).status).toBe(200)
+  expect(await readFile(storage.statePath, 'utf8')).toBe(saved)
+})
+
 it.each(['invalid-sprite', 'oversized-sprite', 'escape', 'junction', 'save-failure'])('preserves old data and existing downstream roles/bindings when migration fails: %s', async failure => {
   const { directory, post, host, storage } = await setup()
   const { mkdir, cp, readFile, writeFile, readdir, symlink } = await import('node:fs/promises')

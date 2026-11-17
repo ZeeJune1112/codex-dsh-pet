@@ -14,6 +14,7 @@ interface PetItem {
   sessionId?: string
   feedback?: string
   availability?: string
+  loadFailed?: boolean
   lastEventAt?: number
   alwaysOnTop?: boolean
   animationEnabled?: boolean
@@ -126,7 +127,9 @@ export function DesktopPetCard(props: DesktopPetCardProps) {
                 </div>
               </section>
               {snapshot.roles ? <section className={css.management} aria-label={t('instanceSettings')}>
+                {selected.loadFailed ? <p role="alert">{t('roleUnavailable')}</p> : null}
                 <label>{t('role')}<select aria-label={t('role')} value={selected.roleId} disabled={Boolean(busy)} onChange={event => update(selected.id, { roleId: event.target.value })}>
+                  {!snapshot.roles.some(role => role.id === selected.roleId) ? <option value={selected.roleId} disabled>{selected.displayName}</option> : null}
                   {snapshot.roles.map(role => <option key={role.id} value={role.id}>{role.displayName}</option>)}
                 </select></label>
                 <button type="button" disabled={Boolean(busy)} onClick={() => void mutate('create', 'create', { roleId: selected.roleId })}>{t('newInstance')}</button>

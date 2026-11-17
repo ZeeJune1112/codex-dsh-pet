@@ -16,6 +16,14 @@ fresh native child signalled readiness and accepted its first synthetic event
 in 649 ms in one observed run, then the authenticated manager quit it; this
 measurement is not a startup-time guarantee.
 
+The follow-up review fixes based on `671778e` passed **152 tests in 24 files**,
+both typechecks, build and all five verification commands on Windows. New
+regressions cover role changes during first opening, shutdown with incomplete
+authenticated HTTP bodies, same-role legacy preferences without overwriting
+downstream instances, and recovery of missing/corrupt roles through management.
+Window operations in these new regressions use a controlled backend; the native
+pipeline check still uses synthetic events and does not establish real Hooks delivery.
+
 ## Evidence classification
 
 **Observed** means the stated local runtime/API was exercised. **Synthetic**

@@ -1,4 +1,5 @@
 export const zh = {
+  roleUnavailable: '角色或窗口加载失败。请选择可用角色，聊天绑定和设置已保留。',
   'desktopPet.title': 'DSH 桌宠',
   sleeping: '休眠', sleepHidden: '休眠中，已自动隐藏',
   role: '角色', newInstance: '新建同角色实例', instanceSettings: '实例与聊天', instanceId: '实例 ID', chatId: '聊天 ID', bind: '绑定 / 重新绑定', unbind: '解除绑定',
@@ -17,6 +18,7 @@ export const zh = {
 } satisfies Record<string, string>
 export type DesktopPetKey = keyof typeof zh
 export const en = {
+  roleUnavailable: 'Role or window could not load. Choose an available role; your binding and settings are preserved.',
   'desktopPet.title': 'DSH Pet',
   sleeping: 'Sleeping', sleepHidden: 'Sleeping, automatically hidden',
   role: 'Role', newInstance: 'New instance of this role', instanceSettings: 'Instance and chat', instanceId: 'Instance ID', chatId: 'Chat ID', bind: 'Bind / rebind', unbind: 'Unbind',

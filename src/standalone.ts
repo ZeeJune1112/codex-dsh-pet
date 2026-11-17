@@ -31,6 +31,7 @@ export interface PetInstanceSnapshot extends PetInstanceSettings {
   feedback: CodexFeedbackState
   availability: 'unbound' | 'unobserved' | 'observed' | 'stale' | 'unavailable'
   stale: boolean
+  loadFailed: boolean
   sleeping: boolean
   lastEventAt?: number
   lastEventType?: NormalizedHookEvent['eventType']
@@ -51,6 +52,7 @@ interface PetInstance {
   ended: boolean
   lastEvidenceAt?: number
   stale: boolean
+  loadFailed: boolean
   staleTimer?: ReturnType<typeof setTimeout>
   idleSince?: number
   sleepTimer?: ReturnType<typeof setTimeout>
@@ -109,7 +111,7 @@ export class DesktopPetHost {
 
   private newInstance(settings: PetInstanceSettings): PetInstance {
     return { settings, feedback: settings.sessionId === undefined ? 'IDLE' : 'UNKNOWN', latestTimestamp: -1,
-      completedTurns: new Set(), ended: false, stale: false, turnId: undefined, turnHasActivity: false, lastEventTurnId: undefined,
+      completedTurns: new Set(), ended: false, stale: false, loadFailed: false, turnId: undefined, turnHasActivity: false, lastEventTurnId: undefined,
       lastEventAt: undefined, lastEventType: undefined, lastEvidenceAt: undefined, staleTimer: undefined,
       idleSince: settings.sessionId === undefined ? this.now() : undefined, sleepTimer: undefined, sleeping: false }
   }
@@ -120,7 +122,7 @@ export class DesktopPetHost {
       this.refreshStale(pet)
       this.refreshSleep(pet)
       return {
-        ...pet.settings, position: { ...pet.settings.position }, feedback: pet.feedback, stale: pet.stale, sleeping: pet.sleeping,
+        ...pet.settings, position: { ...pet.settings.position }, feedback: pet.feedback, stale: pet.stale, loadFailed: pet.loadFailed, sleeping: pet.sleeping,
         availability: pet.settings.sessionId === undefined ? 'unbound' : !this.lock ? 'unavailable'
           : pet.lastEventAt === undefined ? 'unobserved' : pet.stale ? 'stale' : 'observed',
         lastEventAt: pet.lastEventAt, lastEventType: pet.lastEventType, pose: pet.window?.currentPose,
@@ -241,7 +243,7 @@ export class DesktopPetHost {
     this.saveSettings(settings)
     clearTimeout(pet.staleTimer)
     clearTimeout(pet.sleepTimer)
-    Object.assign(pet, this.newInstance(settings))
+    Object.assign(pet, this.newInstance(settings), { loadFailed: pet.loadFailed })
     this.scheduleSleep(pet)
     this.applyPresentation(pet)
   }
@@ -255,6 +257,7 @@ export class DesktopPetHost {
   }
 
   private async applyInstanceUpdate(pet: PetInstance, patch: InstancePatch): Promise<void> {
+    await pet.opening?.catch(() => {})
     if (!this.started) throw new Error('desktop pet host is not running')
     const settings: InstancePatch = {}
     if (!patch || Array.isArray(patch) || Object.keys(patch).some(key => !['roleId', 'scale', 'visible', ...BOOLEAN_PREFERENCES, ...Object.keys(NUMBER_PREFERENCES)].includes(key))) throw new Error('invalid instance settings')
@@ -292,7 +295,8 @@ export class DesktopPetHost {
     this.saveSettings(current)
     pet.settings = current
     const rendererChanged = ['alwaysOnTop', 'animationEnabled', 'animationSpeed', 'idleFrequencySec', 'clickThrough'].some(key => key in patch)
-    if (rendererChanged) { await pet.window?.destroy(); pet.window = undefined; await this.openWindow(pet) }
+    if (rendererChanged) { await pet.window?.destroy(); pet.window = undefined }
+    await this.openWindow(pet)
     this.applyPresentation(pet)
   }
 
@@ -323,7 +327,13 @@ export class DesktopPetHost {
         throw error
       }
     })()
-    try { await pet.opening } finally { pet.opening = undefined }
+    try {
+      await pet.opening
+      pet.loadFailed = false
+    } catch (error) {
+      pet.loadFailed = true
+      throw error
+    } finally { pet.opening = undefined }
   }
 
   async start(): Promise<void> {
@@ -345,7 +355,10 @@ export class DesktopPetHost {
       if (this.backend === undefined) this.backend = selectBackend()
       if (!this.backend) throw new Error(`no supported desktop pet window backend on ${process.platform}`)
       this.rendering = true
-      for (const pet of this.instances.values()) await this.openWindow(pet)
+      for (const pet of this.instances.values()) {
+        try { await this.openWindow(pet) }
+        catch { /* Keep the failed instance available for repair through management. */ }
+      }
       this.started = true
       process.once('SIGINT', this.onSignal)
       process.once('SIGTERM', this.onSignal)

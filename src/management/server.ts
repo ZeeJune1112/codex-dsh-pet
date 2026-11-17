@@ -134,9 +134,9 @@ export class ManagementServer {
   }
   async stop(): Promise<void> {
     if (!this.server.listening) return
-    await this.mutations.catch(() => {})
+    const closed = new Promise<void>((resolve, reject) => this.server.close(error => error ? reject(error) : resolve()))
     this.server.closeAllConnections()
-    await new Promise<void>((resolve, reject) => this.server.close(error => error ? reject(error) : resolve()))
+    await Promise.all([closed, this.mutations.catch(() => {})])
     await rm(join(this.host.dataDirectory, 'management.json'), { force: true })
   }
 }
