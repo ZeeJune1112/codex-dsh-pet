@@ -74,8 +74,8 @@ function toAtlas(loaded: LoadedPet): AtlasBuffer {
 }
 
 /** Load a pet by id (a directory name under `assets/pets/`) into an atlas. */
-export async function loadPetAtlas(petId: string): Promise<AtlasBuffer> {
-  let directory = join(userPetsDir, petId)
+export async function loadPetAtlas(petId: string, importedPetsDirectory = userPetsDir): Promise<AtlasBuffer> {
+  let directory = join(importedPetsDirectory, petId)
   try {
     await import('node:fs/promises').then(fs => fs.access(join(directory, 'pet.json')))
   } catch {

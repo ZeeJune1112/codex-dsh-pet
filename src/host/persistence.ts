@@ -1,16 +1,27 @@
 import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 export interface HostPosition {
   x: number
   y: number
 }
-export interface HostState {
+export interface PetInstanceSettings {
+  id: string
+  roleId: string
+  sessionId?: string
   position: HostPosition
   scale: number
+  visible: boolean
 }
-const DEFAULT_STATE: HostState = { position: { x: 40, y: 40 }, scale: 1 }
+export interface HostState {
+  version: 2
+  instances: PetInstanceSettings[]
+}
+export function defaultPetInstance(id: string = randomUUID()): PetInstanceSettings {
+  return { id, roleId: 'text', position: { x: 40, y: 40 }, scale: 1, visible: true }
+}
 const MIN_SCALE = 0.5
 const MAX_SCALE = 4
 
@@ -20,11 +31,7 @@ export function defaultHostDataDir(environment: NodeJS.ProcessEnv = process.env)
   return join(root, 'codex-dsh-pet')
 }
 
-function cloneState(state: HostState): HostState {
-  return { position: { ...state.position }, scale: state.scale }
-}
-
-function parseState(value: unknown): HostState | null {
+function parsePositionAndScale(value: unknown): Pick<PetInstanceSettings, 'position' | 'scale'> | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as { position?: unknown; scale?: unknown }
   if (typeof record.position !== 'object' || record.position === null) return null
@@ -35,6 +42,32 @@ function parseState(value: unknown): HostState | null {
     position: { x: Number(position.x), y: Number(position.y) },
     scale: Number(record.scale),
   }
+}
+
+function parseState(value: unknown): HostState | null {
+  if (typeof value !== 'object' || value === null) return null
+  const record = value as Partial<HostState>
+  if (record.version === undefined) {
+    const legacy = parsePositionAndScale(value)
+    return legacy ? { version: 2, instances: [{ ...defaultPetInstance('default'), ...legacy }] } : null
+  }
+  if (record.version !== 2 || !Array.isArray(record.instances) || record.instances.length === 0) return null
+  const instances: PetInstanceSettings[] = []
+  const ids = new Set<string>()
+  const sessions = new Set<string>()
+  for (const instance of record.instances) {
+    const settings = parsePositionAndScale(instance)
+    if (!settings || typeof instance.id !== 'string' || !/^[\w-]{1,128}$/.test(instance.id)
+      || typeof instance.roleId !== 'string' || !/^[\w-]{1,128}$/.test(instance.roleId)
+      || typeof instance.visible !== 'boolean' || ids.has(instance.id)) return null
+    if (instance.sessionId !== undefined && (typeof instance.sessionId !== 'string'
+      || instance.sessionId.length === 0 || instance.sessionId.length > 256 || sessions.has(instance.sessionId))) return null
+    ids.add(instance.id)
+    if (instance.sessionId !== undefined) sessions.add(instance.sessionId)
+    instances.push({ id: instance.id, roleId: instance.roleId, ...settings, visible: instance.visible,
+      ...(instance.sessionId === undefined ? {} : { sessionId: instance.sessionId }) })
+  }
+  return { version: 2, instances }
 }
 
 export class HostStorage {
@@ -49,9 +82,9 @@ export class HostStorage {
   load(): HostState {
     try {
       const parsed = parseState(JSON.parse(readFileSync(this.statePath, 'utf8')))
-      return parsed ? cloneState(parsed) : cloneState(DEFAULT_STATE)
+      return parsed ?? { version: 2, instances: [defaultPetInstance('default')] }
     } catch {
-      return cloneState(DEFAULT_STATE)
+      return { version: 2, instances: [defaultPetInstance('default')] }
     }
   }
 
@@ -59,9 +92,13 @@ export class HostStorage {
     const parsed = parseState(state)
     if (!parsed) throw new Error('invalid host state')
     mkdirSync(this.directory, { recursive: true })
-    const temporary = `${this.statePath}.${process.pid}.tmp`
-    writeFileSync(temporary, JSON.stringify(parsed, null, 2), 'utf8')
-    renameSync(temporary, this.statePath)
+    const temporary = `${this.statePath}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporary, JSON.stringify(parsed, null, 2), { encoding: 'utf8', flush: true })
+      renameSync(temporary, this.statePath)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
   }
 }
 
