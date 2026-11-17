@@ -191,6 +191,7 @@ export class PetRuntime {
           scale: pref.scale,
           alwaysOnTop: this.options.config.alwaysOnTop,
           animationEnabled: this.options.config.animationEnabled,
+          animationSpeed: this.options.config.animationSpeed,
           idleFrequencySec: this.options.config.idleFrequencySec,
           clickThrough: this.options.config.clickThrough,
           position: pref.position,

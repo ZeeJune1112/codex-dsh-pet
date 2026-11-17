@@ -94,6 +94,7 @@ export async function importPetFromPetdex(slugInput: string, options: PetdexImpo
   const root = options.directory ?? userPetsDir
   const target = join(root, slug)
   const staging = join(root, `.incoming-${slug}-${randomUUID()}`)
+  let ownsTarget = false
 
   await mkdir(root, { recursive: true })
   try {
@@ -115,14 +116,18 @@ export async function importPetFromPetdex(slugInput: string, options: PetdexImpo
     await loadPet({ directory: staging })
     // Windows may keep the validated source file open briefly after Sharp.
     // Persist from the already-downloaded buffers instead of renaming it.
-    await mkdir(target)
+    try { await mkdir(target) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('Pet is already installed or being imported')
+      throw error
+    }
+    ownsTarget = true
     await writeFile(join(target, 'pet.json'), normalizedManifest, 'utf8')
     await writeFile(join(target, spriteFile), spritesheet)
     await rm(staging, { recursive: true, force: true }).catch(() => {})
     return entry
   } catch (error) {
     await rm(staging, { recursive: true, force: true }).catch(() => {})
-    await rm(target, { recursive: true, force: true }).catch(() => {})
+    if (ownsTarget) await rm(target, { recursive: true, force: true }).catch(() => {})
     throw error
   }
 }

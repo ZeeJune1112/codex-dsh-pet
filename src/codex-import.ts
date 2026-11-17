@@ -1,16 +1,71 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
-import { unzipSync } from 'fflate'
+import { Unzip, UnzipInflate, unzipSync } from 'fflate'
 import { userPetsDir } from './petdex'
 import { loadPet } from './renderer/codex-pet/PetLoader'
 
 const MAX_UNPACKED_BYTES = 80 * 1024 * 1024
+const MAX_COMPRESSED_BYTES = 40 * 1024 * 1024
 
 export interface CodexImportResult { id: string; displayName: string; config?: Record<string, unknown> }
 
 function safeEntry(name: string): boolean {
-  return name.length > 0 && !name.startsWith('/') && !/^[A-Za-z]:/.test(name) && !name.split('/').includes('..')
+  const normalized = name.replaceAll('\\', '/')
+  return normalized.length > 0 && !normalized.startsWith('/') && !/[\x00-\x1f:]/.test(normalized)
+    && !normalized.replace(/\/$/, '').split('/').some(part => !part || part === '..' || part === '.' || /[. ]$/.test(part)
+      || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))
+}
+
+function unpack(bytes: Uint8Array): Record<string, Uint8Array> {
+  if (bytes.byteLength > MAX_COMPRESSED_BYTES) throw new Error('The compressed pet package is too large')
+  const declared = new Map<string, number>()
+  let declaredTotal = 0
+  // Inspect every central-directory entry before any decompression or file writes.
+  unzipSync(bytes, { filter: file => {
+    if (!safeEntry(file.name)) throw new Error('Unsafe ZIP entry path')
+    const name = file.name.replaceAll('\\', '/')
+    const key = name.toLowerCase()
+    if (declared.has(key)) throw new Error('Duplicate ZIP entry path')
+    declared.set(key, file.originalSize)
+    declaredTotal += file.originalSize
+    if (!Number.isSafeInteger(declaredTotal) || declaredTotal > MAX_UNPACKED_BYTES) throw new Error('The unpacked pet package is too large')
+    return false
+  } })
+  const archive: Record<string, Uint8Array> = Object.create(null)
+  let total = 0
+  const unzipper = new Unzip(file => {
+    if (!safeEntry(file.name)) throw new Error('Unsafe ZIP entry path')
+    const name = file.name.replaceAll('\\', '/')
+    const key = name.toLowerCase()
+    const expected = declared.get(key)
+    if (expected === undefined) throw new Error('ZIP entry is missing from the directory')
+    declared.delete(key)
+    let size = 0
+    const chunks: Uint8Array[] = []
+    file.ondata = (error, chunk, final) => {
+      if (error) throw error
+      size += chunk.byteLength
+      total += chunk.byteLength
+      if (total > MAX_UNPACKED_BYTES) throw new Error('The unpacked pet package is too large')
+      if (size > expected || (final && size !== expected)) throw new Error('ZIP entry has an invalid expanded size')
+      chunks.push(chunk)
+      if (final) {
+        const content = new Uint8Array(size)
+        let offset = 0
+        for (const part of chunks) { content.set(part, offset); offset += part.length }
+        archive[name] = content
+      }
+    }
+    file.start()
+  })
+  unzipper.register(UnzipInflate)
+  // Bound each inflate step even when an archive lies about its expanded size.
+  for (let offset = 0; offset < bytes.length; offset += 1024) {
+    unzipper.push(bytes.subarray(offset, offset + 1024), offset + 1024 >= bytes.length)
+  }
+  if (declared.size || total <= 0) throw new Error('The unpacked pet package is empty or incomplete')
+  return archive
 }
 
 function petId(value: unknown, filename: string): string {
@@ -23,11 +78,8 @@ function petId(value: unknown, filename: string): string {
 
 /** Import a Codex/Pocket Pet ZIP without shelling out to a system unzip tool. */
 export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet.zip', directory = userPetsDir): Promise<CodexImportResult> {
-  let archive: Record<string, Uint8Array>
-  try { archive = unzipSync(bytes) } catch { throw new Error('The selected file is not a readable ZIP package') }
-  const names = Object.keys(archive).filter(safeEntry)
-  const total = names.reduce((sum, name) => sum + archive[name].byteLength, 0)
-  if (total <= 0 || total > MAX_UNPACKED_BYTES) throw new Error('The unpacked pet package is empty or too large')
+  const archive = unpack(bytes)
+  const names = Object.keys(archive)
   const manifests = names.filter(name => posix.basename(name).toLowerCase() === 'pet.json').sort((a, b) => a.split('/').length - b.split('/').length)
   if (manifests.length === 0) throw new Error('The ZIP package does not contain pet.json')
   const manifestPath = manifests[0]
@@ -38,6 +90,7 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
   const packageNames = names.filter(name => name.startsWith(root)).map(name => name.slice(root.length)).filter(Boolean)
   const spritePath = typeof manifest.spritesheetPath === 'string' ? manifest.spritesheetPath.replaceAll('\\', '/') : ''
   if (!safeEntry(spritePath) || archive[root + spritePath] === undefined) throw new Error('pet.json references a missing sprite sheet')
+  manifest.spritesheetPath = spritePath
   const spriteBytes = archive[root + spritePath]
   const target = join(directory, id)
   const staging = join(directory, `.incoming-${id}-${randomUUID()}`)
@@ -48,6 +101,7 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
   await mkdir(staging, { recursive: true })
+  let ownsTarget = false
   try {
     for (const relative of packageNames) {
       if (!safeEntry(relative) || relative.endsWith('/')) continue
@@ -65,7 +119,11 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
         return { rgba: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height }
       },
     })
-    await mkdir(target)
+    try { await mkdir(target) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('Pet is already installed or being imported')
+      throw error
+    }
+    ownsTarget = true
     for (const relative of packageNames) {
       if (!safeEntry(relative) || relative.endsWith('/')) continue
       const out = join(target, ...relative.split('/'))
@@ -79,7 +137,7 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
     }
     return { id, displayName: typeof manifest.displayName === 'string' ? manifest.displayName : id, config }
   } catch (error) {
-    await rm(target, { recursive: true, force: true, maxRetries: 4, retryDelay: 75 }).catch(() => {})
+    if (ownsTarget) await rm(target, { recursive: true, force: true, maxRetries: 4, retryDelay: 75 }).catch(() => {})
     throw error
   } finally {
     await rm(staging, { recursive: true, force: true, maxRetries: 4, retryDelay: 75 }).catch(() => {})

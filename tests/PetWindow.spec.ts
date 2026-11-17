@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { PetWindow } from '../src/renderer/PetWindow'
 import type { WindowBackend, WindowBackendOptions, WindowHandle } from '../src/renderer/backend/WindowBackend'
 import type { PetFrame } from '../src/renderer/FrameDecoder'
+import { createFakeClock } from './helpers/fakeClock'
 
 function makeBackend() {
   const handles: FakeHandle[] = []
@@ -20,8 +21,9 @@ function makeBackend() {
 class FakeHandle implements WindowHandle {
   shown = true
   destroyed = false
+  presented: PetFrame[] = []
   constructor(readonly opts: WindowBackendOptions) {}
-  present(_frame: PetFrame): void {}
+  present(frame: PetFrame): void { this.presented.push(frame) }
   move(): void {}
   setAlwaysOnTop(): void {}
   show(): void { this.shown = true }
@@ -32,6 +34,17 @@ class FakeHandle implements WindowHandle {
 const atlas = { width: 1536, height: 1872, rgba: new Uint8Array(1536 * 1872 * 4) }
 
 describe('PetWindow live settings', () => {
+  it('passes alwaysOnTop through and presents the initial frame when animation is disabled', async () => {
+    const { backend, handles } = makeBackend()
+    const fake = createFakeClock()
+    const w = new PetWindow({ backend, atlas, clock: fake.clock, scale: 1, alwaysOnTop: false, animationEnabled: false, idleFrequencySec: 20 })
+    await w.open()
+    expect(handles[0].opts.alwaysOnTop).toBe(false)
+    expect(handles[0].presented).toHaveLength(1)
+    expect(fake.pendingCount()).toBe(0)
+    await w.destroy()
+  })
+
   it('setVisible shows/hides without destroying', async () => {
     const { backend, handles } = makeBackend()
     const w = new PetWindow({ backend, atlas, scale: 1, alwaysOnTop: true, animationEnabled: false, idleFrequencySec: 20 })

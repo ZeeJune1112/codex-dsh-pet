@@ -42,6 +42,8 @@ const WM_LBUTTONUP = 0x0202
 const WM_NCMOUSEMOVE = 0x00a0
 const WM_NCMOUSELEAVE = 0x02a2
 const WM_NCRBUTTONUP = 0x00a5
+const WM_CAPTURECHANGED = 0x0215
+const WM_DISPLAYCHANGE = 0x007e
 const HTCAPTION = 2
 
 const TME_LEAVE = 0x00000002
@@ -81,6 +83,30 @@ interface Koffi {
   encode(address: any, type: any, value: any): void
 }
 
+interface Win32WindowState extends WindowBackendOptions {
+  dragActive: boolean
+  dragStartCursorX: number
+  dragStartCursorY: number
+  dragStartWinX: number
+  dragStartWinY: number
+}
+
+interface VirtualScreenBounds { left: number; top: number; right: number; bottom: number }
+
+/** Keep a persisted overlay position reachable after monitor/layout changes. */
+export function recoverWindowPosition(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  bounds: VirtualScreenBounds,
+): { x: number; y: number } {
+  const maxX = Math.max(bounds.left, bounds.right - size.width)
+  const maxY = Math.max(bounds.top, bounds.bottom - size.height)
+  return {
+    x: Math.min(maxX, Math.max(bounds.left, position.x)),
+    y: Math.min(maxY, Math.max(bounds.top, position.y)),
+  }
+}
+
 /**
  * Everything declared once per process: the koffi instance, the DLLs, the named
  * struct/prototype types, and the single registered window class + window
@@ -104,6 +130,7 @@ interface Win32Bindings {
   translateMessage: (...args: any[]) => number
   dispatchMessage: (...args: any[]) => number
   getWindowRect: (...args: any[]) => number
+  recoverPosition: (position: { x: number; y: number }, size: { width: number; height: number }) => { x: number; y: number }
   createDibSection: (...args: any[]) => any
   createCompatibleDC: (...args: any[]) => any
   selectObject: (...args: any[]) => any
@@ -120,24 +147,7 @@ interface Win32Bindings {
   getCursorPos: (...args: any[]) => number
   TRACKMOUSEEVENT: any
   wndProc: unknown
-  /** Updated on each `create()` so the single wndProc reports drags to the current window. */
-  currentOnDrag: ((x: number, y: number) => void) | undefined
-  /** Updated on each `create()` so the single wndProc reports drag direction. */
-  currentOnDragMove: ((direction: 'left' | 'right') => void) | undefined
-  /** Updated on each `create()` so the single wndProc reports drag end. */
-  currentOnDragEnd: (() => void) | undefined
-  /** Manual-drag state (process-wide: one window is active at a time). */
-  dragActive: boolean
-  dragStartCursorX: number
-  dragStartCursorY: number
-  dragStartWinX: number
-  dragStartWinY: number
-  /** Updated on each `create()` so the single wndProc reports hover to the current window. */
-  currentOnHover: (() => void) | undefined
-  /** Updated on each `create()` so the single wndProc reports hover-leave to the current window. */
-  currentOnUnhover: (() => void) | undefined
-  /** Updated on each `create()` so the single wndProc reports the close choice. */
-  currentOnClose: (() => void) | undefined
+  windows: Map<unknown, Win32WindowState>
 }
 
 async function loadKoffi(): Promise<Koffi> {
@@ -166,6 +176,7 @@ function getBindings(): Promise<Win32Bindings> {
       AlphaFormat: 'uint8',
     })
     const RECT = koffi.struct('DshRect', { left: 'int32', top: 'int32', right: 'int32', bottom: 'int32' })
+    const MONITORINFO = koffi.struct('DshMonitorInfo', { cbSize: 'uint32', rcMonitor: RECT, rcWork: RECT, dwFlags: 'uint32' })
     // MSG is a fixed 48-byte structure on 64-bit Windows; PeekMessageW writes
     // into this pre-allocated slot (never pass null).
     const MSG = koffi.struct('DshMsg', {
@@ -220,6 +231,8 @@ function getBindings(): Promise<Win32Bindings> {
     const translateMessage = user32.func('__stdcall', 'TranslateMessage', 'int32', ['void *'])
     const dispatchMessageW = user32.func('__stdcall', 'DispatchMessageW', 'intptr', ['void *'])
     const getWindowRect = user32.func('__stdcall', 'GetWindowRect', 'int32', ['void *', 'void *'])
+    const monitorFromRect = user32.func('__stdcall', 'MonitorFromRect', 'void *', ['void *', 'uint32'])
+    const getMonitorInfo = user32.func('__stdcall', 'GetMonitorInfoW', 'int32', ['void *', 'void *'])
     const trackMouseEvent = user32.func('__stdcall', 'TrackMouseEvent', 'int32', ['void *'])
     const setCapture = user32.func('__stdcall', 'SetCapture', 'void *', ['void *'])
     const releaseCapture = user32.func('__stdcall', 'ReleaseCapture', 'int32', [])
@@ -236,25 +249,26 @@ function getBindings(): Promise<Win32Bindings> {
       dwHoverTime: 'uint32',
     })
 
+    const monitorRect = koffi.alloc(RECT, 1)
+    const monitorInfo = koffi.alloc(MONITORINFO, 1)
+    const recoverPosition: Win32Bindings['recoverPosition'] = (position, size) => {
+      koffi.encode(monitorRect, RECT, { left: position.x, top: position.y, right: position.x + size.width, bottom: position.y + size.height })
+      const monitor = monitorFromRect(monitorRect, 2) // MONITOR_DEFAULTTONEAREST includes gaps between displays.
+      koffi.encode(monitorInfo, MONITORINFO, { cbSize: koffi.sizeof(MONITORINFO) })
+      return monitor !== null && getMonitorInfo(monitor, monitorInfo)
+        ? recoverWindowPosition(position, size, koffi.decode(monitorInfo, MONITORINFO).rcWork)
+        : { x: position.x, y: position.y }
+    }
     const bindings: Win32Bindings = {
       koffi,
       POINT, SIZE, BLENDFUNCTION, MSG, RECT, BITMAPINFOHEADER,
       updateLayeredWindow, setWindowPos, showWindow, destroyWindow, deleteObject, deleteDC,
       peekMessage: peekMessageW, translateMessage, dispatchMessage: dispatchMessageW, getWindowRect,
+      recoverPosition,
       createDibSection, createCompatibleDC, selectObject, getDC, releaseDC, createWindowExW,
       trackMouseEvent, setCapture, releaseCapture, createPopupMenu, appendMenuW, trackPopupMenu, destroyMenu, getCursorPos, TRACKMOUSEEVENT,
       wndProc: undefined,
-      currentOnDrag: undefined,
-      currentOnDragMove: undefined,
-      currentOnDragEnd: undefined,
-      dragActive: false,
-      dragStartCursorX: 0,
-      dragStartCursorY: 0,
-      dragStartWinX: 0,
-      dragStartWinY: 0,
-      currentOnHover: undefined,
-      currentOnUnhover: undefined,
-      currentOnClose: undefined,
+      windows: new Map(),
     }
 
     // Per-message scratch reused across all windows: the shared wndProc writes
@@ -268,7 +282,27 @@ function getBindings(): Promise<Win32Bindings> {
     const wndProc = koffi.register(
       (hwnd: any, msg: number, wParam: number, lParam: number) => {
         if (msg === WM_NCHITTEST) return HTCAPTION
-        if (msg === WM_DESTROY) return 0
+        const state = bindings.windows.get(hwnd)
+        if (msg === WM_DESTROY) {
+          bindings.windows.delete(hwnd)
+          return 0
+        }
+        if (!state) return defWindowProcW(hwnd, msg, wParam, lParam)
+        if (msg === WM_DISPLAYCHANGE) {
+          if (!getWindowRect(hwnd, rect)) return 0
+          const r = koffi.decode(rect, RECT)
+          const position = recoverPosition({ x: r.left, y: r.top }, state)
+          if (position.x !== r.left || position.y !== r.top) {
+            setWindowPos(hwnd, null, position.x, position.y, 0, 0, 0x0001 | 0x0004 | 0x0010)
+            state.onDrag?.(position.x, position.y)
+          }
+          return 0
+        }
+        if (msg === WM_CAPTURECHANGED && state.dragActive) {
+          state.dragActive = false
+          state.onDragEnd?.()
+          return 0
+        }
         if (msg === WM_NCLBUTTONDOWN) {
           // Begin a manual drag: capture the mouse so moves keep arriving even
           // outside the small window, and record the start positions.
@@ -276,35 +310,35 @@ function getBindings(): Promise<Win32Bindings> {
           const p = koffi.decode(point, POINT)
           getWindowRect(hwnd, rect)
           const r = koffi.decode(rect, RECT)
-          bindings.dragStartCursorX = p.x
-          bindings.dragStartCursorY = p.y
-          bindings.dragStartWinX = r.left
-          bindings.dragStartWinY = r.top
-          bindings.dragActive = true
+          state.dragStartCursorX = p.x
+          state.dragStartCursorY = p.y
+          state.dragStartWinX = r.left
+          state.dragStartWinY = r.top
+          state.dragActive = true
           setCapture(hwnd)
           return 0
         }
         if (msg === WM_MOUSEMOVE) {
-          if (bindings.dragActive) {
+          if (state.dragActive) {
             getCursorPos(point)
             const p = koffi.decode(point, POINT)
-            const dx = p.x - bindings.dragStartCursorX
-            const dy = p.y - bindings.dragStartCursorY
+            const dx = p.x - state.dragStartCursorX
+            const dy = p.y - state.dragStartCursorY
             if (dx !== 0 || dy !== 0) {
-              setWindowPos(hwnd, HWND_TOPMOST, bindings.dragStartWinX + dx, bindings.dragStartWinY + dy, 0, 0, 0x0001 | 0x0010)
-              if (dx !== 0) bindings.currentOnDragMove?.(dx < 0 ? 'left' : 'right')
+              setWindowPos(hwnd, state.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST, state.dragStartWinX + dx, state.dragStartWinY + dy, 0, 0, 0x0001 | 0x0010)
+              if (dx !== 0) state.onDragMove?.(dx < 0 ? 'left' : 'right')
             }
           }
           return 0
         }
         if (msg === WM_LBUTTONUP || msg === WM_NCLBUTTONUP) {
-          if (bindings.dragActive) {
-            bindings.dragActive = false
+          if (state.dragActive) {
+            state.dragActive = false
             releaseCapture()
             getWindowRect(hwnd, rect)
             const r = koffi.decode(rect, RECT)
-            bindings.currentOnDragEnd?.()
-            bindings.currentOnDrag?.(r.left, r.top)
+            state.onDragEnd?.()
+            state.onDrag?.(r.left, r.top)
           }
           return 0
         }
@@ -318,11 +352,11 @@ function getBindings(): Promise<Win32Bindings> {
             dwHoverTime: 0,
           })
           trackMouseEvent(tme)
-          bindings.currentOnHover?.()
+          state.onHover?.()
           return 0
         }
         if (msg === WM_NCMOUSELEAVE) {
-          bindings.currentOnUnhover?.()
+          state.onUnhover?.()
           return 0
         }
         if (msg === WM_NCRBUTTONUP) {
@@ -337,7 +371,7 @@ function getBindings(): Promise<Win32Bindings> {
           const choice = trackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD, p.x, p.y, 0, hwnd, null)
           destroyMenu(menu)
           if (choice === MENU_ITEM_CLOSE) {
-            bindings.currentOnClose?.()
+            state.onClose?.()
           }
           return 0
         }
@@ -413,6 +447,7 @@ class Win32Handle implements WindowHandle {
     private readonly bitsPtr: any,
     private readonly bitsLength: number,
     private readonly msg: any,
+    private alwaysOnTop: boolean,
   ) {
     const { koffi, POINT, SIZE, BLENDFUNCTION } = bindings
     this.ptSrc = koffi.alloc(POINT, 1)
@@ -449,11 +484,14 @@ class Win32Handle implements WindowHandle {
 
   move(x: number, y: number): void {
     if (this.destroyed) return
-    this.bindings.setWindowPos(this.hwnd, HWND_TOPMOST, x, y, 0, 0, 0x0001 | 0x0010)
+    this.bindings.setWindowPos(this.hwnd, this.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST, x, y, 0, 0, 0x0001 | 0x0010)
   }
 
   setAlwaysOnTop(value: boolean): void {
     if (this.destroyed) return
+    this.alwaysOnTop = value
+    const state = this.bindings.windows.get(this.hwnd)
+    if (state) state.alwaysOnTop = value
     this.bindings.setWindowPos(this.hwnd, value ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
   }
 
@@ -471,6 +509,7 @@ class Win32Handle implements WindowHandle {
     if (this.destroyed) return
     this.destroyed = true
     if (this.pumpTimer) clearInterval(this.pumpTimer)
+    this.bindings.windows.delete(this.hwnd)
     this.bindings.destroyWindow(this.hwnd)
     this.bindings.deleteObject(this.hBitmap)
     this.bindings.deleteDC(this.hdcMem)
@@ -502,24 +541,24 @@ export class Win32Backend implements WindowBackend {
   async create(options: WindowBackendOptions): Promise<WindowHandle> {
     const b = await getBindings()
     const { koffi, createWindowExW, createDibSection, createCompatibleDC, selectObject, getDC, releaseDC, BITMAPINFOHEADER } = b
-
-    b.currentOnDrag = options.onDrag
-    b.currentOnDragMove = options.onDragMove
-    b.currentOnDragEnd = options.onDragEnd
-    b.dragActive = false
-    b.currentOnHover = options.onHover
-    b.currentOnUnhover = options.onUnhover
-    b.currentOnClose = options.onClose
-
-    const exStyle = WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | (options.clickThrough ? WS_EX_TRANSPARENT : 0)
+    const exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | (options.alwaysOnTop ? WS_EX_TOPMOST : 0) | (options.clickThrough ? WS_EX_TRANSPARENT : 0)
+    const position = b.recoverPosition(options, options)
     const hwnd = createWindowExW(
       exStyle, CLASS_NAME, '', WS_POPUP,
-      options.x, options.y, options.width, options.height,
+      position.x, position.y, options.width, options.height,
       null, null, null, null,
     )
     if (hwnd === null) {
       throw new Error('CreateWindowExW returned a null window handle (window class not registered?)')
     }
+    b.windows.set(hwnd, {
+      ...options,
+      dragActive: false,
+      dragStartCursorX: 0,
+      dragStartCursorY: 0,
+      dragStartWinX: 0,
+      dragStartWinY: 0,
+    })
 
     // 32-bit top-down DIB section for the frame pixels.
     const header = koffi.alloc(BITMAPINFOHEADER, 1)
@@ -549,9 +588,10 @@ export class Win32Backend implements WindowBackend {
 
     const msg = koffi.alloc(b.MSG, 1)
 
-    const handle = new Win32Handle(b, hwnd, hdcMem, hBitmap, bitsPtr, options.width * options.height * 4, msg)
+    const handle = new Win32Handle(b, hwnd, hdcMem, hBitmap, bitsPtr, options.width * options.height * 4, msg, options.alwaysOnTop)
     handle.show()
     handle.startPump()
+    if (position.x !== options.x || position.y !== options.y) options.onDrag?.(position.x, position.y)
 
     return handle
   }
