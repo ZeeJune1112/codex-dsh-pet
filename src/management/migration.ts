@@ -2,7 +2,6 @@ import { lstat, readFile, readdir, realpath, mkdir, writeFile, rename, rm } from
 import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import sharp from 'sharp'
 import type { DesktopPetHost } from '../standalone'
 import { defaultPetInstance, type PetInstanceSettings } from '../host/persistence'
 import { quantizeScale } from '../pet-state'
@@ -121,10 +120,7 @@ export async function migrateLegacy(host: DesktopPetHost, source: string): Promi
         await writeFile(join(roleStage, 'pet.json'), JSON.stringify({ id, displayName: manifest.displayName,
           spriteVersionNumber: manifest.spriteVersionNumber, spritesheetPath: 'spritesheet' }))
         await writeFile(join(roleStage, 'spritesheet'), sprite)
-        await loadPet({ directory: roleStage, decoder: async () => {
-          const { data, info } = await sharp(sprite).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-          return { rgba: data, width: info.width, height: info.height }
-        } })
+        await loadPet({ directory: roleStage })
         staged.push(id)
       }
     }

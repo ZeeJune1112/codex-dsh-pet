@@ -1,7 +1,8 @@
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import sharp from 'sharp'
 import { zipSync } from 'fflate'
 import { importCodexPetZip } from '../src/codex-import'
 
@@ -19,6 +20,15 @@ async function fixture() {
 }
 
 describe('Codex ZIP import', () => {
+  it('rejects excessive sprite pixels before decoding or publishing a role', async () => {
+    const { root, files } = await fixture()
+    files['spritesheet.webp'] = await sharp({ create: { width: 2048, height: 2048, channels: 4, background: '#00000000' } }).png().toBuffer()
+    const raw = vi.spyOn(sharp.prototype, 'raw')
+    await expect(importCodexPetZip(zipSync(files), 'large-pixels.zip', root)).rejects.toThrow(/pixel/i)
+    expect(raw).not.toHaveBeenCalled()
+    expect(await readdir(root)).toEqual([])
+  })
+
   it('finds a nested pet.json and preserves Pocket Pet config', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-pet-zip-'))
     roots.push(root)

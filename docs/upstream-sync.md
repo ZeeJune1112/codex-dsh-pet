@@ -15,6 +15,7 @@ tested. The upstream MIT notice remains verbatim in root `LICENSE`.
 | HWND callback isolation, offscreen recovery, topmost/speed, bounded atomic imports; Sharp 0.35.5 | `f2a42b3c0134bc25c7a6043f5a9565ff5ed237b0`; Win32 backend, PetWindow, import modules and lockfile | injected Win32 messages, retained animation tests, real ZIP/decode tests |
 | Standalone manager, downstream role directory and explicit migration | `27859fa12205e0765c74f6519018f9c784cb8a10`; `src/management`, client standalone and shared cards | real HTTP, React controls, import/migration tests and native API smoke |
 | Readiness signal, opt-in diagnostic metadata, verification and source notices | `2b9d3ba90058869c33de181f57093d62cfeccdb9`; `src/integration/diagnostics.ts`, `src/integration/hooks-transport.ts`, `scripts/verify-pipeline.mjs` | deterministic deadline/late-readiness test, detached-child readiness, allowlist log and built pipeline |
+| Final integration review: native ownership, ACK/readiness races, command paths, image bounds and concurrent hide | `src/host/persistence.ts`, `src/integration/hooks*`, `src/renderer/codex-pet/PetLoader.ts`, imports, `src/standalone.ts` | concurrent Windows child/crash recovery; real pipe with delayed backend/winning listener; rejected shell-sensitive paths; pre-allocation checks across all import paths; role-load/hide regression |
 
 Compatibility means retaining the sprite contract, row/frame timing, renderer,
 management operations and plugin entry points while fixing known defects. It

@@ -256,7 +256,7 @@ export class DesktopPetHost {
 
   private async applyInstanceUpdate(pet: PetInstance, patch: InstancePatch): Promise<void> {
     if (!this.started) throw new Error('desktop pet host is not running')
-    const settings = { ...pet.settings }
+    const settings: InstancePatch = {}
     if (!patch || Array.isArray(patch) || Object.keys(patch).some(key => !['roleId', 'scale', 'visible', ...BOOLEAN_PREFERENCES, ...Object.keys(NUMBER_PREFERENCES)].includes(key))) throw new Error('invalid instance settings')
     for (const key of BOOLEAN_PREFERENCES) {
       if (patch[key] !== undefined) {
@@ -284,11 +284,11 @@ export class DesktopPetHost {
       if (typeof patch.roleId !== 'string' || !/^[\w-]{1,128}$/.test(patch.roleId)) throw new Error('invalid role ID')
       settings.roleId = patch.roleId
     }
-    const atlas = settings.roleId === pet.settings.roleId ? undefined
+    const atlas = settings.roleId === undefined || settings.roleId === pet.settings.roleId ? undefined
       : this.atlas ?? await loadPetAtlas(settings.roleId, join(this.storage.directory, 'pets'))
     if (atlas) await pet.window?.loadPet(atlas)
-    await pet.window?.setScale(settings.scale)
-    const current = { ...settings, position: pet.settings.position, sessionId: pet.settings.sessionId }
+    await pet.window?.setScale(settings.scale ?? pet.settings.scale)
+    const current = { ...pet.settings, ...settings }
     this.saveSettings(current)
     pet.settings = current
     const rendererChanged = ['alwaysOnTop', 'animationEnabled', 'animationSpeed', 'idleFrequencySec', 'clickThrough'].some(key => key in patch)

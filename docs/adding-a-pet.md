@@ -130,9 +130,9 @@ cell at `x = i * 192`, `y = r * 208`.
 
 ## Notes
 
-- The pet is rendered with the fixed 9-state animation format; a sprite sheet
-  narrower than 1536 px or shorter than 1872 px fails to load with a clear error
-  in the log.
+- Sprite sheets must be exactly 1536 px wide, at least 1872 px high for v1 or
+  2288 px for v2, and no larger than 1536 × 2288 pixels. All loading/import paths
+  check image metadata and this pixel budget before allocating raw RGBA pixels.
 - A broken pet directory is skipped during scanning; the remaining pets still
   load, and the plugin falls back to the bundled `text` pet if nothing valid is
   found.

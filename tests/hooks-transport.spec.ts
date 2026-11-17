@@ -5,6 +5,9 @@ import { HookEventServer } from '../src/host/hook-server'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { mkdtempSync } from 'node:fs'
 import type { NormalizedHookEvent } from '../src/integration/hooks'
 
 const event: NormalizedHookEvent = { eventType: 'SessionStart', sessionId: 's1', timestamp: 1 }
@@ -79,6 +82,44 @@ describe('hook pipe transport', () => {
       await expect(sendHookEvent({ ...event, turnId: 't1' }, { pipePath })).resolves.toBe(true)
       expect(events).toEqual([{ ...event, turnId: 't1' }])
     } finally { await server.stop() }
+  })
+
+  it('does not launch or replay an event when the connected server loses its acknowledgement', async () => {
+    const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
+    const events: NormalizedHookEvent[] = []
+    const server = new HookEventServer({ pipePath, onEvent: value => { events.push(value); throw new Error('ack unavailable') } })
+    const launchHost = vi.fn(async () => {})
+    await server.start()
+    try {
+      await expect(sendHookEvent(event, { pipePath, launchHost })).resolves.toBe(false)
+      expect(events).toEqual([event])
+      expect(launchHost).not.toHaveBeenCalled()
+    } finally { await server.stop() }
+  })
+
+  it('waits for the winning host pipe when a concurrent launcher exits first', async () => {
+    const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
+    const path = join(mkdtempSync(join(tmpdir(), 'pet-cold-race-')), 'instance.lock')
+    const winner = spawn(process.execPath, ['--experimental-transform-types', '--no-warnings',
+      fileURLToPath(new URL('./fixtures/lock-host.mjs', import.meta.url)), path, pipePath], {
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true,
+    })
+    let listen: ReturnType<typeof setTimeout> | undefined
+    try {
+      await once(winner, 'message')
+      const acquired = once(winner, 'message')
+      winner.send('acquire')
+      expect((await acquired)[0]).toBe('acquired')
+      const losingLauncher = fileURLToPath(new URL('./fixtures/losing-launcher.mjs', import.meta.url))
+      const launchHost = (signal: AbortSignal) => {
+        listen = setTimeout(() => winner.send('listen'), 250)
+        return launchDetachedHost(losingLauncher, pipePath, 800, signal)
+      }
+      await expect(sendHookEvent(event, { pipePath, launchHost })).resolves.toBe(true)
+    } finally {
+      clearTimeout(listen)
+      const exited = once(winner, 'exit'); winner.kill(); await exited
+    }
   })
 
   it('waits for real detached pipe readiness before its single delivery attempt', async () => {

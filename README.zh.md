@@ -83,7 +83,7 @@ dsh --profile <name>
 npm run start:host
 ```
 
-宿主会把位置、缩放和单实例锁保存在 `%LOCALAPPDATA%\\codex-dsh-pet`。
+宿主会把位置和缩放保存在 `%LOCALAPPDATA%\\codex-dsh-pet`。以该目录为标识的 Windows 命名互斥量防止多个宿主同时运行，进程退出或崩溃时由系统释放。
 
 > 如果你是从 harness 仓库源码运行，请在 harness 仓库目录内把上面的命令加上 `pnpm` 前缀——即执行 `pnpm dsh plugin ...` 与 `pnpm dsh ...`。
 

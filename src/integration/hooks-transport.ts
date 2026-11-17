@@ -14,15 +14,18 @@ export interface PipeConnection {
 
 export interface HookTransportOptions {
   pipePath?: string
-  connect?: (pipePath: string) => Promise<PipeConnection>
+  connect?: (pipePath: string, signal?: AbortSignal) => Promise<PipeConnection>
   launchHost?: (signal: AbortSignal) => Promise<void> | void
   timeoutMs?: number
 }
 
-function connectPipe(pipePath: string): Promise<PipeConnection> {
+function connectPipe(pipePath: string, signal?: AbortSignal): Promise<PipeConnection> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error('pipe deadline')); return }
     const socket = createConnection(pipePath)
-    socket.setTimeout(150, () => socket.destroy(new Error('pipe timeout')))
+    const abort = () => socket.destroy(new Error('pipe deadline'))
+    signal?.addEventListener('abort', abort, { once: true })
+    socket.once('close', () => signal?.removeEventListener('abort', abort))
     socket.on('error', reject)
     socket.once('connect', () => resolve({
       write(value) {
@@ -47,11 +50,16 @@ export function defaultHostScript(): string {
 export function launchDetachedHost(script = defaultHostScript(), pipePath = DEFAULT_HOOK_PIPE, timeoutMs = 800, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('launch deadline')); return }
+    let finished = false
+    const readiness = new AbortController()
     const child = spawn(process.execPath, [script, '--hook-pipe', pipePath], {
       detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true,
     })
     const finish = (error?: Error) => {
+      if (finished) return
+      finished = true
       clearTimeout(timer)
+      readiness.abort()
       signal?.removeEventListener('abort', abort)
       child.removeAllListeners('message')
       child.removeAllListeners('exit')
@@ -64,8 +72,18 @@ export function launchDetachedHost(script = defaultHostScript(), pipePath = DEFA
     const timer = setTimeout(abort, timeoutMs)
     signal?.addEventListener('abort', abort, { once: true })
     child.once('error', finish)
-    // A concurrent launcher may lose the singleton race; its exit still permits one retry.
-    child.once('exit', () => finish())
+    // A losing launcher cannot announce when the winner is ready; probe without sending an event.
+    child.once('exit', async () => {
+      while (!finished) {
+        try {
+          const connection = await connectPipe(pipePath, readiness.signal)
+          connection.close()
+          finish()
+        } catch {
+          if (!finished) await new Promise(resolve => setTimeout(resolve, 20))
+        }
+      }
+    })
     child.on('message', message => { if (message === 'hook-pipe-ready') finish() })
   })
 }
@@ -77,20 +95,26 @@ export async function sendHookEvent(event: NormalizedHookEvent, options: HookTra
   let deadline: ReturnType<typeof setTimeout> | undefined
   const launch = new AbortController()
   const pipePath = options.pipePath ?? DEFAULT_HOOK_PIPE
+  const connect = () => (options.connect ?? connectPipe)(pipePath, launch.signal)
   const write = async () => {
-    connection = await (options.connect ?? connectPipe)(pipePath)
+    if (!connection) return false
     if (expired) { connection.close(); return false }
     try { await connection.write(`${JSON.stringify(event)}\n`); return true }
     finally { connection.close(); connection = undefined }
   }
   const deliver = async () => {
-    try { return await write() } catch { /* cold host */ }
-    if (expired) return false
     try {
-      await (options.launchHost ?? (signal => launchDetachedHost(undefined, pipePath, options.timeoutMs ?? 800, signal)))(launch.signal)
+      connection = await connect()
+    } catch {
       if (expired) return false
-      return await write()
-    } catch { return false }
+      try {
+        await (options.launchHost ?? (signal => launchDetachedHost(undefined, pipePath, options.timeoutMs ?? 800, signal)))(launch.signal)
+        if (expired) return false
+        connection = await connect()
+      } catch { return false }
+    }
+    // Once connected, a lost acknowledgement is uncertain delivery, never a cold start.
+    try { return await write() } catch { return false }
   }
   try {
     return await Promise.race([

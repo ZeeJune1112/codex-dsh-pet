@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { defaultHostScript } from '../lib/hooks.js'
@@ -8,9 +8,9 @@ import { defaultHostScript } from '../lib/hooks.js'
 assert.equal(defaultHostScript(), resolve('lib/standalone.js'))
 
 const root = mkdtempSync(join(tmpdir(), 'pet-hook-verify-'))
-function run(args, input, diagnostics = '') {
+function run(args, input, diagnostics = '', script = resolve('lib/hooks.js')) {
   return new Promise((resolveRun, reject) => {
-    const child = spawn(process.execPath, ['lib/hooks.js', ...args], { windowsHide: true, stdio: 'pipe',
+    const child = spawn(process.execPath, [script, ...args], { windowsHide: true, stdio: 'pipe', cwd: root,
       env: { ...process.env, LOCALAPPDATA: root, CODEX_PET_DIAGNOSTICS: diagnostics } })
     let stdout = '', stderr = ''
     // Process startup is OS scheduled; the wrapper's own deadline begins after JS startup.
@@ -32,6 +32,15 @@ try {
   assert.equal(generated.code, 0)
   assert.equal(existsSync(target), false)
   assert.equal(JSON.parse(generated.stdout).hooks.SessionEnd[0].hooks[0].async, false)
+  const unsupported = join(root, '%PET_PATH%', 'lib')
+  cpSync(resolve('lib'), unsupported, { recursive: true })
+  const existing = '{"description":"preserve this config"}\n'
+  writeFileSync(target, existing)
+  const rejected = await run(['--generate-config', target], '', '', join(unsupported, 'hooks.js'))
+  assert.equal(rejected.code, 1)
+  assert.equal(rejected.stdout, '')
+  assert.match(rejected.stderr, /Cannot generate hooks config/)
+  assert.equal(readFileSync(target, 'utf8'), existing)
   for (const input of ['not JSON', '{"hook_event_name":"Stop"}', undefined]) {
     const result = await run([], input)
     assert.equal(result.code, 0)
@@ -43,7 +52,7 @@ try {
   const diagnostic = await run([], 'private invalid payload', '1')
   assert.deepEqual(diagnostic, { code: 0, stdout: '', stderr: '' })
   assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')), { errorCode: 'INVALID_INPUT' })
-  console.log('Built hook config, host path, silent failures, stalled stdin, and opt-in diagnostics verified (isolated data; no activation).')
+  console.log('Built hook config, unsupported path rejection, host path, silent failures, stalled stdin, and opt-in diagnostics verified (isolated data; no activation).')
 } finally {
   assert(resolve(root).startsWith(resolve(tmpdir()) + sep))
   rmSync(root, { recursive: true, force: true, maxRetries: 4, retryDelay: 75 })

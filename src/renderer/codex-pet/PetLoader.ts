@@ -15,7 +15,7 @@ import { join, relative, resolve } from 'node:path'
 import { atlasSize, CELL_WIDTH, type PetManifest } from './PetContract'
 
 /** Decodes an image file into a premultiplied-free raw RGBA buffer. */
-export type AtlasDecoder = (path: string) => Promise<{ rgba: Uint8Array; width: number; height: number }>
+export type AtlasDecoder = (path: string, version?: 1 | 2) => Promise<{ rgba: Uint8Array; width: number; height: number }>
 
 export interface LoadedPet {
   manifest: PetManifest
@@ -33,11 +33,25 @@ export interface PetLoadOptions {
   directory?: string
 }
 
+const MAX_ATLAS_PIXELS = atlasSize(2).width * atlasSize(2).height
+
+function validateDimensions(width: number, height: number, version: 1 | 2): void {
+  const expected = atlasSize(version)
+  if (width !== expected.width) {
+    throw new Error(`Sprite sheet width ${width} does not match the ${CELL_WIDTH}px × ${expected.width / CELL_WIDTH} column contract (expected ${expected.width})`)
+  }
+  if (height < expected.height) throw new Error(`Sprite sheet height ${height} is smaller than the v${version} contract height ${expected.height}`)
+  if (width * height > MAX_ATLAS_PIXELS) throw new Error('Sprite sheet exceeds the supported atlas pixel budget')
+}
+
 /** Default decoder backed by `sharp` (lazily imported). */
-export const sharpDecoder: AtlasDecoder = async (path) => {
+export const sharpDecoder: AtlasDecoder = async (path, version = 1) => {
   const { default: sharp } = await import('sharp')
   // Decode bytes so Windows can rename/roll back role directories immediately after validation.
-  const { data, info } = await sharp(await readFile(path))
+  const image = sharp(await readFile(path), { limitInputPixels: MAX_ATLAS_PIXELS })
+  const metadata = await image.metadata()
+  validateDimensions(metadata.width, metadata.height, version)
+  const { data, info } = await image
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true })
@@ -89,20 +103,8 @@ export async function loadPet(options: PetLoadOptions = {}): Promise<LoadedPet> 
   if (relativeSheet.startsWith('..') || resolve(directory, relativeSheet) !== sheetPath) {
     throw new Error('spritesheetPath must stay inside the pet directory')
   }
-  const { rgba, width, height } = await decoder(sheetPath)
-
-  const expected = atlasSize(version)
-  // The contract fixes cell and column geometry; width is the hard invariant.
-  if (width !== expected.width) {
-    throw new Error(
-      `Sprite sheet width ${width} does not match the ${CELL_WIDTH}px × ${expected.width / CELL_WIDTH} column contract (expected ${expected.width})`,
-    )
-  }
-  if (height < expected.height) {
-    throw new Error(
-      `Sprite sheet height ${height} is smaller than the v${version} contract height ${expected.height}`,
-    )
-  }
+  const { rgba, width, height } = await decoder(sheetPath, version)
+  validateDimensions(width, height, version)
 
   return { manifest, version, atlasWidth: width, atlasHeight: height, rgba }
 }

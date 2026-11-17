@@ -89,7 +89,8 @@ To run the bundled text pet as its own Windows 11 host (Node 22/npm):
 npm run start:host
 ```
 
-The host stores its position, scale, and single-instance lock under `%LOCALAPPDATA%\\codex-dsh-pet`.
+The host stores its position and scale under `%LOCALAPPDATA%\\codex-dsh-pet`.
+A Windows named mutex keyed to that directory prevents concurrent hosts and is released on process exit or crash.
 
 > If you are running Harness from a source checkout, prefix the commands above
 > with `pnpm` — i.e. run `pnpm dsh plugin ...` and `pnpm dsh ...` from the
