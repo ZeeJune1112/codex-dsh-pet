@@ -1,0 +1,19 @@
+# dsh-pet bundle layer.
+#
+# Applied when a profile lists this bundle (see `dsh.profile.bundles`).
+# The pet is optional: omitting or removing this bundle leaves Harness
+# functioning normally.
+- insert:
+    - id: dsh-pet
+      name: "@ysyyhhh/dsh-pet"
+      config:
+        enabled: true
+        alwaysOnTop: true
+        petScale: 1
+        petId: text
+        hideWhenIdle: false
+        animationEnabled: true
+        idleFrequencySec: 20
+        clickThrough: false
+        startSleeping: false
+        animationSpeed: 1
