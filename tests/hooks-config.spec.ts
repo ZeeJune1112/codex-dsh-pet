@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { HOOK_MARKER, mergeHooksConfig } from '../src/integration/hooks-config'
+import { createHookCommand, HOOK_MARKER, mergeHooksConfig } from '../src/integration/hooks-config'
 
 describe('Codex user hooks config generator', () => {
+  it('quotes paths with spaces and rejects paths that cmd could expand or split', () => {
+    expect(createHookCommand('C:\\Program Files\\node.exe', 'C:\\pet folder\\hooks.js')).toBe('"C:/Program Files/node.exe" "C:/pet folder/hooks.js"')
+    for (const path of ['C:\\%PET_HOME%\\hooks.js', 'C:\\!PET_HOME!\\hooks.js', 'bad"path', 'bad\npath', 'bad\rpath']) {
+      expect(() => createHookCommand(path, 'C:\\pet\\hooks.js')).toThrow(/unsupported/i)
+      expect(() => createHookCommand('C:\\node.exe', path)).toThrow(/unsupported/i)
+    }
+  })
+
   it('preserves user fields and hook groups, updates only marked entries, and is idempotent', () => {
     const own = { type: 'command', command: 'old', statusMessage: HOOK_MARKER }
     const existing = JSON.stringify({

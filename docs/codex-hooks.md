@@ -7,6 +7,9 @@ does not write configuration or activate/trust hooks. Only handlers marked
 `[codex-dsh-pet] State feedback` are replaced; unrelated user fields and hooks
 are retained. Repeating generation produces the same result. Malformed config
 fails without producing replacement content.
+Node or wrapper paths containing `%`, `!`, quotes, or line breaks are rejected
+because Windows command expansion can change their meaning even inside quotes.
+Generation then exits with an error and emits no replacement JSON.
 
 Use the generated JSON when reviewing the user hook configuration. Do not
 redirect output over the input file: shell redirection can truncate it before
@@ -37,12 +40,15 @@ persist the input, forward tool arguments/results, call a model, or return
 approval/block/context output. Raw stdin is capped at 64 KiB. Malformed input,
 unreachable pipes, and failed launches silently exit zero.
 
-The Windows pipe name includes a hash of the user's home directory. The first
-delivery failure starts the standalone host detached with hidden stdio. The child
+The Windows pipe name includes a hash of the user's home directory. An initial
+connection failure starts the standalone host detached with hidden stdio. The child
 signals pipe readiness over a temporary IPC channel; the wrapper then retries
-once. A losing concurrent child exit also permits that one retry. The channel is
-closed on readiness or deadline, and a late signal cannot trigger delivery. There
-is no fixed startup sleep. Transport has an 800 ms deadline; the entire wrapper,
+once. If a concurrent child loses ownership and exits, the launcher probes for
+the winning host's pipe before sending that retry. Probes contain no event payload.
+An acknowledgement failure after connection never launches a host or replays the
+event, since the host may already have processed it. The channel is closed on
+readiness or deadline, and a late signal cannot trigger delivery. Transport has
+one 800 ms deadline including acknowledgement; the entire wrapper,
 including stdin, has a 900 ms deadline after JavaScript startup. All generated
 handlers set a one-second Codex timeout. `SessionEnd` is explicitly synchronous:
 Codex runs it synchronously even if an async flag is set. Other handlers are

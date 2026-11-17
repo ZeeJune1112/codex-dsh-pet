@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { normalizeHookEvent } from './integration/hooks'
 import { sendHookEvent } from './integration/hooks-transport'
-import { mergeHooksConfig } from './integration/hooks-config'
+import { createHookCommand, mergeHooksConfig } from './integration/hooks-config'
 import { recordDiagnostic } from './integration/diagnostics'
 export { defaultHostScript, launchDetachedHost, sendHookEvent } from './integration/hooks-transport'
 export { normalizeHookEvent } from './integration/hooks'
@@ -31,7 +31,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       try { existing = readFileSync(path, 'utf8') } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
-      const command = `"${process.execPath.replaceAll('\\', '/')}" "${fileURLToPath(import.meta.url).replaceAll('\\', '/')}"`
+      const command = createHookCommand(process.execPath, fileURLToPath(import.meta.url))
       process.stdout.write(mergeHooksConfig(existing, command))
     } catch { console.error('Cannot generate hooks config; existing configuration was not modified.'); process.exitCode = 1 }
   } else {

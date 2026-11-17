@@ -6,6 +6,7 @@ import { request } from 'node:http'
 import { DesktopPetHost } from '../src/standalone'
 import { HostStorage } from '../src/host/persistence'
 import { ManagementServer } from '../src/management/server'
+import sharp from 'sharp'
 
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -117,7 +118,7 @@ it('declines migration without writes, then migrates validated roles/settings on
   await post('migrate', { confirm: true })
   expect(await readFile(storage.statePath, 'utf8')).toBe(after)
 })
-it.each(['invalid-sprite', 'escape', 'junction', 'save-failure'])('preserves old data and existing downstream roles/bindings when migration fails: %s', async failure => {
+it.each(['invalid-sprite', 'oversized-sprite', 'escape', 'junction', 'save-failure'])('preserves old data and existing downstream roles/bindings when migration fails: %s', async failure => {
   const { directory, post, host, storage } = await setup()
   const { mkdir, cp, readFile, writeFile, readdir, symlink } = await import('node:fs/promises')
   const { vi } = await import('vitest')
@@ -128,6 +129,8 @@ it.each(['invalid-sprite', 'escape', 'junction', 'save-failure'])('preserves old
   const existing = await readFile(join(directory, 'pets', 'existing', 'spritesheet.webp'))
   const manifestPath = join(legacy, 'pets', 'migration-failure', 'pet.json')
   if (failure === 'invalid-sprite') await writeFile(join(legacy, 'pets', 'migration-failure', 'spritesheet.webp'), 'invalid image')
+  if (failure === 'oversized-sprite') await writeFile(join(legacy, 'pets', 'migration-failure', 'spritesheet.webp'),
+    await sharp({ create: { width: 2048, height: 2048, channels: 4, background: '#00000000' } }).png().toBuffer())
   if (failure === 'escape') await writeFile(manifestPath, JSON.stringify({ id: 'bad', spritesheetPath: '../../outside.webp' }))
   if (failure === 'junction') {
     await mkdir(join(directory, 'outside'))
@@ -137,8 +140,10 @@ it.each(['invalid-sprite', 'escape', 'junction', 'save-failure'])('preserves old
   const before = await readFile(storage.statePath, 'utf8')
   const oldManifest = await readFile(manifestPath, 'utf8')
   const save = failure === 'save-failure' ? vi.spyOn(storage, 'save').mockImplementationOnce(() => { throw new Error('disk full') }) : undefined
+  const raw = failure === 'oversized-sprite' ? vi.spyOn(sharp.prototype, 'raw') : undefined
   const response = await post('migrate', { confirm: true })
   save?.mockRestore()
+  if (raw) { expect(raw).not.toHaveBeenCalled(); raw.mockRestore() }
   expect(response.status).toBe(400)
   expect(await readFile(storage.statePath, 'utf8')).toBe(before)
   expect(await readFile(manifestPath, 'utf8')).toBe(oldManifest)

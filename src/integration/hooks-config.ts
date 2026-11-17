@@ -2,6 +2,12 @@ import { CODEX_HOOK_EVENT_TYPES } from './hooks'
 
 export const HOOK_MARKER = '[codex-dsh-pet] State feedback'
 
+/** cmd expands environment variables even inside quoted paths. */
+export function createHookCommand(executable: string, script: string): string {
+  if ([executable, script].some(path => /[%!"\r\n]/.test(path))) throw new Error('Unsupported character in Hooks command path')
+  return `"${executable.replaceAll('\\', '/')}" "${script.replaceAll('\\', '/')}"`
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

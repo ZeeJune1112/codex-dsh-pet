@@ -91,7 +91,6 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
   const spritePath = typeof manifest.spritesheetPath === 'string' ? manifest.spritesheetPath.replaceAll('\\', '/') : ''
   if (!safeEntry(spritePath) || archive[root + spritePath] === undefined) throw new Error('pet.json references a missing sprite sheet')
   manifest.spritesheetPath = spritePath
-  const spriteBytes = archive[root + spritePath]
   const target = join(directory, id)
   const staging = join(directory, `.incoming-${id}-${randomUUID()}`)
   try {
@@ -111,14 +110,7 @@ export async function importCodexPetZip(bytes: Uint8Array, filename = 'codex-pet
     }
     manifest.id = id
     await writeFile(join(staging, 'pet.json'), JSON.stringify(manifest, null, 2), 'utf8')
-    await loadPet({
-      directory: staging,
-      decoder: async () => {
-        const { default: sharp } = await import('sharp')
-        const { data, info } = await sharp(spriteBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-        return { rgba: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height }
-      },
-    })
+    await loadPet({ directory: staging })
     try { await rename(staging, target) } catch (error) {
       if (await stat(target).then(() => true, () => false)) throw new Error('Pet is already installed or being imported')
       throw error

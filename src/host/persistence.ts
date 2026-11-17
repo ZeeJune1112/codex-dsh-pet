@@ -1,7 +1,8 @@
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { basename, dirname, join, resolve } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 
 export interface HostPosition {
   x: number
@@ -136,43 +137,36 @@ export interface InstanceLock {
   release(): void
 }
 
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
-  }
-}
-
-/** Acquire an atomic lock file and remove one left by a dead host process. */
+/** Windows releases the named kernel object on exit, including process crashes. */
 export function acquireInstanceLock(path: string): InstanceLock {
   mkdirSync(dirname(path), { recursive: true })
-  for (;;) {
-    try {
-      const fd = openSync(path, 'wx')
-      writeFileSync(fd, `${process.pid}\n`, 'utf8')
-      let released = false
-      return {
-        release() {
-          if (released) return
-          released = true
-          try { closeSync(fd) } catch { /* already closed */ }
-          try { rmSync(path, { force: true }) } catch { /* best effort on exit */ }
-        },
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      let pid: number | undefined
-      try {
-        const value = Number.parseInt(readFileSync(path, 'utf8').trim(), 10)
-        if (Number.isInteger(value) && value > 0) pid = value
-      } catch {
-        // Treat an unreadable lock as active; removing it could violate singleton semantics.
-      }
-      if (pid === undefined || isProcessAlive(pid)) throw new Error('desktop pet host is already running')
-      try { rmSync(path, { force: true }) } catch { throw new Error('desktop pet host is already running') }
-    }
+  if (process.platform === 'win32') {
+    // Hook diagnostics import storage too; load the native dependency only when acquiring ownership.
+    const kernel = createRequire(import.meta.url)('koffi').load('kernel32.dll')
+    const createMutex = kernel.func('void* __stdcall CreateMutexW(void*, int, str16)')
+    const getLastError = kernel.func('uint32 __stdcall GetLastError()')
+    const closeHandle = kernel.func('int __stdcall CloseHandle(void*)')
+    const key = createHash('sha256').update(join(realpathSync(dirname(path)), basename(resolve(path))).toLowerCase()).digest('hex')
+    const handle = createMutex(null, 0, `Global\\codex-dsh-pet-${key}`)
+    const error = getLastError()
+    if (!handle) throw new Error(`Cannot acquire desktop pet host mutex (${error})`)
+    if (error === 183) { closeHandle(handle); throw new Error('desktop pet host is already running') }
+    let released = false
+    return { release() { if (!released) { released = true; closeHandle(handle) } } }
   }
+  // shortcut: non-Windows CI fails closed on stale files; add an OS lock before supporting a non-Windows host.
+  const token = randomUUID()
+  let fd: number
+  try { fd = openSync(path, 'wx') } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('desktop pet host is already running')
+    throw error
+  }
+  try { writeFileSync(fd, token, 'utf8') } finally { closeSync(fd) }
+  let released = false
+  return { release() {
+    if (released) return
+    released = true
+    try { if (readFileSync(path, 'utf8') === token) rmSync(path) } catch { /* best effort on exit */ }
+  } }
 }
 

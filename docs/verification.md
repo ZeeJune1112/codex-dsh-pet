@@ -7,9 +7,9 @@ physical desktop interaction acceptance are not yet verified. No validation
 here activates Hooks, writes trust decisions, or makes model calls.
 
 Environment observed: Windows 11 x64, NT build 26200; Node 22.23.2, npm 10.9.8.
-The integration baseline before this verification patch was `69940e1`; the
+The integration baseline before the final review fixes was `a460ffd`; the
 upstream baseline and scoped patches are in [upstream-sync.md](upstream-sync.md).
-This patch passed 129 tests in 24 files, both typechecks, build, all five
+The final review fixes passed 145 tests in 24 files, both typechecks, build, all five
 verification commands (including native), and package dry-run on that Windows
 environment. The baseline `LICENSE` and `assets` trees are unchanged. A separate
 fresh native child signalled readiness and accepted its first synthetic event
@@ -32,14 +32,18 @@ separately.
 | Full native management role import/window/bind/scale/hide/preview/Quit | Root smoke at `69940e1`, ZIP derived only from bundled test art; unauthenticated HTTP 401 / token page 200 | Observed real Win32 and HTTP API; no third-party role download |
 | Browser manager render/bind/Quit | Prior browser check of built manager, plus React and real HTTP tests | Observed browser check; Synthetic test inputs; not physical pet window interaction |
 | Opt-in diagnostics privacy | Real pipe test plus emitted wrapper `verify:hooks`; default writes no log; opted-in record has only allowlisted fields and hashed session | Synthetic privacy fixture; raw input/tool/prompt/transcript data absent |
-| Cold host readiness and failure limits | Detached child reports pipe listening; tests verify deadline expiry and prohibit late retries. Previously 400 ms retry failed twice under load (503/508 ms observations) | Synthetic deterministic readiness/deadline regression; does not guarantee an OS can start a host within 800 ms |
+| Cold host readiness and failure limits | Detached child reports pipe listening; if a concurrent launcher exits first, payload-free probes wait for the winning listener. Real child/pipe regression, deadline expiry and no-late-retry tests | Observed process/pipe with Synthetic lifecycle fixtures; does not guarantee an OS can start a host within 800 ms |
+| Slow window creation and uncertain acknowledgement | Actual local pipe with a backend delayed 220 ms acknowledges the new session within the original overall budget; a lost ACK cannot launch or replay. `verify:native` passes with real windows | Synthetic event/backend delay plus Observed native pipeline; 800 ms transport and 900 ms wrapper deadlines unchanged |
+| Shell-sensitive Hooks paths | Command generator tests and `verify:hooks` run the built wrapper from a percent-containing directory; rejection emits no JSON and preserves the existing fixture config | Observed built generator; no user configuration written |
+| Bounded raster decoding | Loader, ZIP, migration and Petdex tests reject excessive pixels before invoking raw decode; real v1/v2 images still load | Observed Sharp with Synthetic fixtures; maximum 1536 × 2288 pixels, checked before raw allocation |
+| Hide while changing role | Actual atlas loading plus synthetic window callback preserves the latest visibility in storage and the replacement window | Synthetic desktop input; physical right-click acceptance remains pending |
 | Wrapper fail-open | `verify:hooks`: invalid JSON, absent session, stalled stdin return zero with empty stdout/stderr; transport error tests | Observed emitted wrapper + Synthetic failures. Whole wrapper bound is 900 ms after JS startup, transport 800 ms; process scheduling/startup is not a hard real-time guarantee |
 | Upstream contract, frames, management and imports | Preserved contract/animation/runtime tests, actual ZIP decoding, backend message tests, client registration; [patch ledger](upstream-sync.md) | Synthetic compatibility regression against pinned baseline; no future-upstream certification |
 | Hook lifecycle names, IDs, SessionEnd synchronous behavior and trust review | [Official Hooks guide](https://learn.chatgpt.com/docs/hooks), reviewed 2026-11-17 | Public-doc; no local real delivery assertion |
 | Native Pet customization surface | [Official Pets guide](https://learn.chatgpt.com/docs/pets), reviewed 2026-11-17 | Public-doc; asset customization does not replace this independent host |
 | Actual approved two-chat Hooks, user permission wait/recovery, Interrupt and SessionEnd | Awaiting native review and user-directed activity | Not-tested; approval-policy=never cannot manufacture a real permission prompt |
 | Physical drag/hover/right-click, mixed DPI, monitor removal, topmost | [Windows manual checklist](windows-validation.md) | Not-tested. Computer-use attempt failed GetCursorPos with access denied 0x80070005 |
-| Concurrent stale singleton-lock recovery | Sequential lock rejection/restart covered; stale-lock removal race remains for final review | Not-tested race; do not claim flawless singleton recovery |
+| Concurrent singleton ownership and crash recovery | Three real Windows child processes contend for one canonical data directory; exactly one owns the named mutex, a survivor recovers after the owner is killed, and repeated old release cannot evict it | Observed Windows kernel ownership with Synthetic lifecycle fixture. Legacy PID files are not ownership; non-Windows CI uses an exclusive file and fails closed on stale files |
 
 ## Reproduce without activating Hooks
 

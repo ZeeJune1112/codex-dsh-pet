@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import sharp from 'sharp'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importPetFromPetdex } from '../src/petdex'
@@ -31,6 +32,19 @@ function fakeFetch(assetHost = 'assets.petdex.dev'): typeof fetch {
 }
 
 describe('importPetFromPetdex', () => {
+  it('rejects excessive sprite pixels before decoding or publishing downloaded assets', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'petdex-pixels-'))
+    const sprite = await sharp({ create: { width: 2048, height: 2048, channels: 4, background: '#00000000' } }).png().toBuffer()
+    const normalFetch = fakeFetch()
+    const fetchImpl: typeof fetch = (url, options) => String(url) === spriteUrl ? Promise.resolve(new Response(sprite)) : normalFetch(url, options)
+    const raw = vi.spyOn(sharp.prototype, 'raw')
+    try {
+      await expect(importPetFromPetdex('boba', { directory: root, fetchImpl })).rejects.toThrow(/pixel/i)
+      expect(raw).not.toHaveBeenCalled()
+      expect(readdirSync(root)).toEqual([])
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('rejects concurrent imports without removing the winning role', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-petdex-'))
     try {

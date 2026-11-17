@@ -7,7 +7,9 @@ Ticket #6 patches the upstream baseline `ysyyhhh/dsh-pet@a17346b9c41efb4220f3872
 - The renderer forwards `animationSpeed`, and a disabled animation still presents one frame without idle timers.
 - Startup and `WM_DISPLAYCHANGE` clamp the window into the nearest monitor's work area and persist the recovered position through the existing position callback.
 - ZIP imports reject unsafe paths (including backslashes and Windows special paths), duplicate case-insensitive names, compressed input over 40 MiB and expanded data over 80 MiB before writes. Metadata is checked before decompression; bounded streaming also checks actual expanded bytes.
-- Both ZIP and Petdex imports claim their target with an exclusive directory creation. A competing import is rejected; cleanup only removes a target created by that import.
+- ZIP and Petdex imports validate in a staging directory and publish by rename. A competing same-ID import is rejected; cleanup only removes a target published by that import.
+- Every production image decode checks metadata and the supported 1536 × 2288 pixel budget before raw RGBA allocation. ZIP, Petdex and explicit migration use the shared loader; valid v1 and v2 atlases remain supported.
+- The host's named Windows mutex is keyed to the canonical data directory and released by the OS on process exit/crash. Concurrent child ownership, crash recovery and repeated release are covered without stale PID-file deletion.
 - The lockfile updates Sharp from 0.35.3 to 0.35.5 within the existing dependency range, including its platform image libraries, for GHSA-rgj7-g3m4-5g8c and GHSA-wq5f-xc86-pv6w.
 
 ## Automated checks

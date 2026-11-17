@@ -39,6 +39,26 @@ function fakeBackend() {
 const atlas = { width: 1536, height: 1872, rgba: new Uint8Array(1536 * 1872 * 4) }
 
 describe('DesktopPetHost', () => {
+  it('acknowledges a new session after slow window creation without launching another host', async () => {
+    const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-slow-window-')))
+    const { backend } = fakeBackend()
+    const create = backend.create
+    backend.create = async options => {
+      await new Promise(resolve => setTimeout(resolve, 220))
+      return create(options)
+    }
+    const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
+    const host = new DesktopPetHost({ backend, storage, atlas, hookPipePath: pipePath })
+    const launchHost = vi.fn(async () => { throw new Error('host is already running') })
+    await host.start()
+    try {
+      expect(await sendHookEvent({ eventType: 'PreToolUse', sessionId: 'A', turnId: 'a', timestamp: 1 }, { pipePath, launchHost })).toBe(true)
+      expect(await sendHookEvent({ eventType: 'PreToolUse', sessionId: 'B', turnId: 'b', timestamp: 1 }, { pipePath, launchHost })).toBe(true)
+      expect(host.getSnapshot().map(pet => [pet.sessionId, pet.feedback])).toEqual([['A', 'WORKING'], ['B', 'WORKING']])
+      expect(launchHost).not.toHaveBeenCalled()
+    } finally { await host.stop() }
+  })
+
   it('writes only opt-in allowlisted pipe diagnostics and never raw session or event content', async () => {
     const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-diagnostics-')))
     const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
@@ -248,6 +268,24 @@ describe('DesktopPetHost', () => {
       expect(host.getSnapshot()[0]).toMatchObject({ roleId: 'local-only', feedback: 'IDLE', pose: 'idle' })
       await expect(host.updateInstance('one', { roleId: '../outside' })).rejects.toThrow(/invalid role/)
       expect(storage.load().instances[0].roleId).toBe('local-only')
+    } finally { await host.stop() }
+  })
+
+  it('preserves a right-click hide made while the new role atlas is loading', async () => {
+    const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-role-hide-')))
+    cpSync(new URL('../assets/pets/text', import.meta.url), join(storage.directory, 'pets', 'other-role'), { recursive: true })
+    const { backend, handles } = fakeBackend()
+    const host = new DesktopPetHost({ backend, storage, hookPipePath: null })
+    await host.start()
+    try {
+      const changing = host.updateInstance(host.getSnapshot()[0].id, { roleId: 'other-role' })
+      await Promise.resolve()
+      expect(handles[0].destroyed).toBe(false)
+      handles[0].options.onClose?.()
+      await changing
+      expect(host.getSnapshot()[0]).toMatchObject({ roleId: 'other-role', visible: false })
+      expect(storage.load().instances[0]).toMatchObject({ roleId: 'other-role', visible: false })
+      expect(handles.at(-1)?.shown).toBe(false)
     } finally { await host.stop() }
   })
 
