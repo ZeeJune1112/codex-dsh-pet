@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+独立 Codex 宿主的启动、管理链接、实例绑定、导入及显式迁移见 [本地管理说明](docs/management.md)。运行 `npm run start:host` 启动，`npm run management:url` 查询运行中宿主的管理链接。
+
 **dsh-pet** 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的可选桌宠插件。它**兼容 Codex 桌宠格式**（`pet.json` + 8×9 或 8×11 精灵图），并且可以**直接在插件内从 [Petdex](https://petdex.dev/) 导入桌宠**，不需要额外安装 Petdex CLI。
 
 桌宠会跟随 DSH 的工作状态：空闲时放松、模型推理时思考、执行工具时工作、等待输入时求关注，一轮任务结束时庆祝或失落。

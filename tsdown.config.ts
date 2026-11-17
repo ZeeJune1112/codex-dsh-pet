@@ -73,6 +73,15 @@ const cssModulesPlugin = {
 }
 
 export default defineConfig([
+  {
+    entry: { management: 'src/client/standalone.tsx' },
+    outDir: 'lib', format: ['esm'], platform: 'browser', target: 'es2022',
+    dts: false, clean: false, tsconfig: 'tsconfig.client.json',
+    noExternal: /.*/,
+    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+    outputOptions: { entryFileNames: 'management.js' },
+    plugins: [cssModulesPlugin],
+  },
   // --- Node (host) half ----------------------------------------------------
   {
     entry: { index: 'src/index.ts', standalone: 'src/standalone.ts', hooks: 'src/hooks.ts' },

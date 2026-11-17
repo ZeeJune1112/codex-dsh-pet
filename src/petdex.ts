@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -35,20 +35,32 @@ function validSlug(slug: string): boolean {
 
 function trustedAssetUrl(raw: string): URL {
   const url = new URL(raw)
-  if (url.protocol !== 'https:' || !ALLOWED_ASSET_HOSTS.has(url.hostname)) {
+  if (url.protocol !== 'https:' || !ALLOWED_ASSET_HOSTS.has(url.hostname) || url.username || url.password || url.port) {
     throw new Error(`Petdex returned an untrusted asset URL: ${url.hostname}`)
   }
   return url
 }
 
 async function download(fetchImpl: typeof fetch, url: URL, maxBytes: number): Promise<Uint8Array> {
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(60_000) })
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(60_000), redirect: 'error' })
   if (!response.ok) throw new Error(`Download failed (${response.status})`)
   const declared = Number(response.headers.get('content-length') ?? 0)
   if (declared > maxBytes) throw new Error('Downloaded file is too large')
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) throw new Error('Downloaded file has an invalid size')
-  return bytes
+  if (!response.body) throw new Error('Downloaded file is empty')
+  const chunks: Uint8Array[] = []
+  let size = 0
+  const reader = response.body.getReader()
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      size += value.length
+      if (size > maxBytes) throw new Error('Downloaded file is too large')
+      chunks.push(value)
+    }
+  } finally { await reader.cancel() }
+  if (size === 0) throw new Error('Downloaded file is empty')
+  return Buffer.concat(chunks)
 }
 
 function parseManifest(raw: Uint8Array, entry: PetdexEntry, spriteFile: string): string {
@@ -81,9 +93,7 @@ export async function importPetFromPetdex(slugInput: string, options: PetdexImpo
   if (!validSlug(slug)) throw new Error('Pet slug must contain only lowercase letters, numbers, and hyphens')
 
   const fetchImpl = options.fetchImpl ?? fetch
-  const response = await fetchImpl(MANIFEST_URL, { signal: AbortSignal.timeout(60_000) })
-  if (!response.ok) throw new Error(`Could not load the Petdex catalog (${response.status})`)
-  const manifest = await response.json() as PetdexManifest
+  const manifest = JSON.parse(new TextDecoder().decode(await download(fetchImpl, new URL(MANIFEST_URL), 16 * 1024 * 1024))) as PetdexManifest
   const entry = Array.isArray(manifest.pets) ? manifest.pets.find(pet => pet.slug === slug) : undefined
   if (!entry) throw new Error(`Petdex pet "${slug}" was not found`)
 
@@ -114,16 +124,11 @@ export async function importPetFromPetdex(slugInput: string, options: PetdexImpo
     await writeFile(join(staging, 'pet.json'), normalizedManifest, 'utf8')
     await writeFile(join(staging, basename(spriteFile)), spritesheet)
     await loadPet({ directory: staging })
-    // Windows may keep the validated source file open briefly after Sharp.
-    // Persist from the already-downloaded buffers instead of renaming it.
-    try { await mkdir(target) } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('Pet is already installed or being imported')
+    try { await rename(staging, target) } catch (error) {
+      if (await stat(target).then(() => true, () => false)) throw new Error('Pet is already installed or being imported')
       throw error
     }
     ownsTarget = true
-    await writeFile(join(target, 'pet.json'), normalizedManifest, 'utf8')
-    await writeFile(join(target, spriteFile), spritesheet)
-    await rm(staging, { recursive: true, force: true }).catch(() => {})
     return entry
   } catch (error) {
     await rm(staging, { recursive: true, force: true }).catch(() => {})

@@ -15,5 +15,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src/client", "src/css-modules.d.ts"]
+  "include": ["src/client", "src/css-modules.d.ts", "tests/ui"]
 }

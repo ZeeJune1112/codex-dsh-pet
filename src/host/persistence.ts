@@ -14,11 +14,22 @@ export interface PetInstanceSettings {
   position: HostPosition
   scale: number
   visible: boolean
+  hideWhenIdle?: boolean
+  alwaysOnTop?: boolean
+  animationEnabled?: boolean
+  animationSpeed?: number
+  idleFrequencySec?: number
+  clickThrough?: boolean
+  startSleeping?: boolean
 }
 export interface HostState {
   version: 2
   instances: PetInstanceSettings[]
+  selectedInstanceId?: string
+  migrationCompleted?: boolean
 }
+export const BOOLEAN_PREFERENCES = ['hideWhenIdle', 'alwaysOnTop', 'animationEnabled', 'clickThrough', 'startSleeping'] as const
+export const NUMBER_PREFERENCES = { animationSpeed: [0.25, 4], idleFrequencySec: [8, 3600] } as const
 export function defaultPetInstance(id: string = randomUUID()): PetInstanceSettings {
   return { id, roleId: 'text', position: { x: 40, y: 40 }, scale: 1, visible: true }
 }
@@ -62,12 +73,31 @@ function parseState(value: unknown): HostState | null {
       || typeof instance.visible !== 'boolean' || ids.has(instance.id)) return null
     if (instance.sessionId !== undefined && (typeof instance.sessionId !== 'string'
       || instance.sessionId.length === 0 || instance.sessionId.length > 256 || sessions.has(instance.sessionId))) return null
+    const preferences: Partial<PetInstanceSettings> = {}
+    for (const key of BOOLEAN_PREFERENCES) {
+      if (instance[key] !== undefined) {
+        if (typeof instance[key] !== 'boolean') return null
+        preferences[key] = instance[key]
+      }
+    }
+    for (const key of Object.keys(NUMBER_PREFERENCES) as Array<keyof typeof NUMBER_PREFERENCES>) {
+      const value = instance[key]
+      if (value !== undefined) {
+        const [min, max] = NUMBER_PREFERENCES[key]
+        if (!Number.isFinite(value) || value < min || value > max) return null
+        preferences[key] = value
+      }
+    }
     ids.add(instance.id)
     if (instance.sessionId !== undefined) sessions.add(instance.sessionId)
-    instances.push({ id: instance.id, roleId: instance.roleId, ...settings, visible: instance.visible,
+    instances.push({ id: instance.id, roleId: instance.roleId, ...settings, ...preferences, visible: instance.visible,
       ...(instance.sessionId === undefined ? {} : { sessionId: instance.sessionId }) })
   }
-  return { version: 2, instances }
+  if (record.selectedInstanceId !== undefined && !ids.has(record.selectedInstanceId)) return null
+  if (record.migrationCompleted !== undefined && typeof record.migrationCompleted !== 'boolean') return null
+  return { version: 2, instances,
+    ...(record.selectedInstanceId === undefined ? {} : { selectedInstanceId: record.selectedInstanceId }),
+    ...(record.migrationCompleted === undefined ? {} : { migrationCompleted: record.migrationCompleted }) }
 }
 
 export class HostStorage {

@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+For the standalone Codex host, see [local management](docs/management.md): `npm run start:host`, `npm run management:url`, and the browser controls for instances, bindings, imports and explicit migration.
+
 An optional desktop companion for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It is **compatible with Codex desktop-pet packages** (`pet.json` plus an 8×9 or 8×11 sprite sheet) and can **import pets directly from [Petdex](https://petdex.dev/)** without installing the Petdex CLI.
 
 The pet acts as an ambient agent-status indicator: it relaxes when DSH is idle, thinks while the model reasons, works while tools run, waits when input is needed, and celebrates or frowns when a turn finishes.

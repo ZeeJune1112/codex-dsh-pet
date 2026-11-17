@@ -37,7 +37,7 @@ function scanDirectory(directory: string): PetCatalogEntry[] {
   try {
     const names = readdirSync(directory, { withFileTypes: true })
     for (const dirent of names) {
-      if (!dirent.isDirectory()) continue
+      if (!dirent.isDirectory() || !/^[\w-]{1,128}$/.test(dirent.name)) continue
       const id = dirent.name
       try {
         const raw = readFileSync(join(directory, id, 'pet.json'), 'utf8')
@@ -58,13 +58,13 @@ function scanDirectory(directory: string): PetCatalogEntry[] {
   return entries
 }
 
-export function scanPets(directory?: string): PetCatalogEntry[] {
+export function scanPets(directory?: string, importedPetsDirectory = userPetsDir): PetCatalogEntry[] {
   if (directory !== undefined) {
     const entries = scanDirectory(directory)
     return entries.length > 0 ? entries : [FALLBACK_ENTRY]
   }
   const byId = new Map<string, PetCatalogEntry>()
-  for (const entry of [...scanDirectory(ASSETS_DIR), ...scanDirectory(userPetsDir)]) byId.set(entry.id, entry)
+  for (const entry of [...scanDirectory(ASSETS_DIR), ...scanDirectory(importedPetsDirectory)]) byId.set(entry.id, entry)
   const entries = [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName))
   return entries.length > 0 ? entries : [FALLBACK_ENTRY]
 }
@@ -75,6 +75,7 @@ function toAtlas(loaded: LoadedPet): AtlasBuffer {
 
 /** Load a pet by id (a directory name under `assets/pets/`) into an atlas. */
 export async function loadPetAtlas(petId: string, importedPetsDirectory = userPetsDir): Promise<AtlasBuffer> {
+  if (!/^[\w-]{1,128}$/.test(petId)) throw new Error('invalid role ID')
   let directory = join(importedPetsDirectory, petId)
   try {
     await import('node:fs/promises').then(fs => fs.access(join(directory, 'pet.json')))

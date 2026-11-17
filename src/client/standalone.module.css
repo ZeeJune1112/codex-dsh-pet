@@ -1,0 +1,9 @@
+:global(:root) { color-scheme: light; font-family: system-ui, sans-serif; --dsw-alias-bg-layer-1:#fff; --dsw-alias-bg-layer-2:#f4f6fa; --dsw-alias-bg-layer-3:#edf0f7; --dsw-alias-bg-module-platform:#f8f9fc; --dsw-alias-border-l2:#d7ddea; --dsw-alias-brand-primary:#4566d8; --dsw-alias-label-dimmed:#667088; --dsw-alias-label-error:#b22f44; --dsw-alias-label-on-brand:#fff; --dsw-alias-label-primary:#1d2941; --dsw-alias-label-secondary:#53617a; --dsw-alias-label-tertiary:#667088; }
+:global(body) { margin: 0; background: #edf1f8; color: #1d2941; }
+:global(*) { box-sizing: border-box; }
+:global(button), :global(input), :global(select) { font: inherit; }
+:global(:focus-visible) { outline: 3px solid #4566d8; outline-offset: 3px; }
+.shell { max-width: 900px; margin: auto; padding: 28px 16px 60px; }
+.shell h1 { margin-bottom: 8px; font-size: 28px; }
+.shell header p { color: #53617a; margin-bottom: 24px; }
+.shell ul { margin: 0; padding: 0; list-style: none; }
