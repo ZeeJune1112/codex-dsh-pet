@@ -5,19 +5,22 @@ import { fileURLToPath } from 'node:url'
 import { normalizeHookEvent } from './integration/hooks'
 import { sendHookEvent } from './integration/hooks-transport'
 import { mergeHooksConfig } from './integration/hooks-config'
+import { recordDiagnostic } from './integration/diagnostics'
 export { defaultHostScript, launchDetachedHost, sendHookEvent } from './integration/hooks-transport'
+export { normalizeHookEvent } from './integration/hooks'
 
 export async function runHook(): Promise<void> {
   let input = ''
   try {
     for await (const chunk of process.stdin) {
       input += chunk.toString()
-      if (Buffer.byteLength(input) > 64 * 1024) return
+      if (Buffer.byteLength(input) > 64 * 1024) { recordDiagnostic({ errorCode: 'INPUT_TOO_LARGE' }); return }
     }
     const event = normalizeHookEvent(JSON.parse(input))
     input = ''
-    if (event) await sendHookEvent(event)
-  } catch { /* silent fail-open; no control or context output */ }
+    if (!event) recordDiagnostic({ errorCode: 'INVALID_INPUT' })
+    else if (!await sendHookEvent(event)) recordDiagnostic({ event, errorCode: 'DELIVERY_UNAVAILABLE' })
+  } catch { recordDiagnostic({ errorCode: 'INVALID_INPUT' }) }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

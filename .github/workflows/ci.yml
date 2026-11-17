@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [master]
   pull_request:
 
 permissions:
@@ -10,7 +9,11 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,5 +26,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run verify:hooks
+      - run: npm run verify:pipeline
+      - run: npm run verify:management
       - run: npm run verify:client-registration
       - run: npm pack --dry-run

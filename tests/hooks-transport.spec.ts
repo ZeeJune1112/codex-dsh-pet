@@ -43,11 +43,31 @@ describe('hook pipe transport', () => {
   })
 
   it('bounds a stalled connection and still resolves false', async () => {
-    const start = Date.now()
-    await expect(sendHookEvent(event, {
-      connect: () => new Promise(() => {}), timeoutMs: 40,
-    })).resolves.toBe(false)
-    expect(Date.now() - start).toBeLessThan(500)
+    vi.useFakeTimers()
+    try {
+      const result = sendHookEvent(event, { connect: () => new Promise(() => {}), timeoutMs: 40 })
+      await vi.advanceTimersByTimeAsync(40)
+      await expect(result).resolves.toBe(false)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('drops readiness after the deadline without making a late retry', async () => {
+    vi.useFakeTimers()
+    try {
+      let ready!: () => void
+      let signal!: AbortSignal
+      const connect = vi.fn(async (): Promise<PipeConnection> => { throw new Error('unavailable') })
+      const result = sendHookEvent(event, { connect, launchHost: value => {
+        signal = value
+        return new Promise<void>(resolve => { ready = resolve })
+      } })
+      await vi.advanceTimersByTimeAsync(800)
+      await expect(result).resolves.toBe(false)
+      expect(signal.aborted).toBe(true)
+      ready()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(connect).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
   })
 
   it('delivers a normalized event over a real local pipe', async () => {
@@ -61,11 +81,14 @@ describe('hook pipe transport', () => {
     } finally { await server.stop() }
   })
 
-  it('retries after a real detached host becomes ready', async () => {
+  it('waits for real detached pipe readiness before its single delivery attempt', async () => {
     const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
     const fixture = fileURLToPath(new URL('./fixtures/hook-host.mjs', import.meta.url))
+    await launchDetachedHost(fixture, pipePath, 5000)
+    const launchHost = vi.fn(async () => { throw new Error('already started') })
     await expect(sendHookEvent({ ...event, sessionId: 'fixture-session' }, {
-      pipePath, launchHost: () => launchDetachedHost(fixture, pipePath),
+      pipePath, launchHost, timeoutMs: 5000,
     })).resolves.toBe(true)
+    expect(launchHost).not.toHaveBeenCalled()
   })
 })

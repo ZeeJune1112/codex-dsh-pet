@@ -1,8 +1,23 @@
-# dsh-pet
+# Codex dsh-pet
 
 English | [中文](README.zh.md)
 
-For the standalone Codex host, see [local management](docs/management.md): `npm run start:host`, `npm run management:url`, and the browser controls for instances, bindings, imports and explicit migration.
+Standalone desktop pets for Codex on **Windows 11 x64, Node 22/npm**. This downstream keeps the upstream renderer, animations, sprite format and pet management, with one explicit Codex chat binding per instance. It makes no extra model calls.
+
+```powershell
+npm ci
+npm run start:host
+```
+
+Open the private management URL printed by the host. If it was started by a Hook, use `npm run management:url`. The page manages roles, multiple instances, binding, show/hide, scale, ordering and ZIP/Petdex imports. Existing upstream data is copied only through its explicit migration action. Settings and local roles live under `%LOCALAPPDATA%\codex-dsh-pet`.
+
+The only bundled role is the upstream's original **Text (test)** verification art. Import your own permitted Codex/Pocket Pet ZIP or a Petdex role in the manager for a character pet; imported artwork stays local. No third-party character art is redistributed.
+
+For Codex feedback, build first, then follow the [configuration generation and native review](docs/codex-hooks.md) steps. Hooks are not activated by installation. [Local management](docs/management.md), [verification and pending human checks](docs/verification.md), [upstream baseline/patches](docs/upstream-sync.md), and [license notices](THIRD_PARTY_NOTICES.md) describe the supported scope. Real reviewed Hooks and physical DPI/multi-monitor acceptance remain pending; synthetic checks do not establish those outcomes.
+
+## Retained upstream guide
+
+The following guide describes the retained DeepSeek Harness plugin mode; the standalone Codex quickstart above is the downstream entry point.
 
 An optional desktop companion for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It is **compatible with Codex desktop-pet packages** (`pet.json` plus an 8×9 or 8×11 sprite sheet) and can **import pets directly from [Petdex](https://petdex.dev/)** without installing the Petdex CLI.
 

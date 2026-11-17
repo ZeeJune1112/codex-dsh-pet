@@ -21,7 +21,8 @@
     "docs",
     "cordis.patch.yml",
     "README.md",
-    "README.zh.md"
+    "README.zh.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "dsh": {
     "bundle": {
@@ -46,6 +47,8 @@
     "hooks:config": "node lib/hooks.js --generate-config",
     "verify:hooks": "node scripts/verify-hooks.mjs",
     "verify:management": "node scripts/verify-management.mjs",
+    "verify:pipeline": "node scripts/verify-pipeline.mjs",
+    "verify:native": "node scripts/verify-pipeline.mjs --native",
     "management:url": "node lib/standalone.js --management-url",
     "verify:client-registration": "node scripts/verify-client-registration.mjs",
     "typecheck": "tsc --noEmit",
