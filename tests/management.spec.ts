@@ -27,8 +27,41 @@ async function setup(now?: () => number) {
   const url = new URL(server.url)
   const endpoint = (path: string) => `${url.origin}${path}${path.includes('?') ? '&' : '?'}${url.searchParams}`
   const post = (path: string, body: unknown) => fetch(endpoint(`/dsh-pet/${path}`), { method: 'POST', headers: { origin: url.origin, 'content-type': 'application/json' }, body: JSON.stringify(body) })
-  return { directory, storage, host, server, url, endpoint, post, handles }
+  return { directory, storage, host, server, url, endpoint, post, handles, backend }
 }
+it('joins concurrent shutdowns until an accepted window creation has finished', async () => {
+  const { host, server, storage, handles, backend } = await setup()
+  await server.stop()
+  const url = new URL(await host.startManagement())
+  let release!: () => void
+  let announce!: () => void
+  const entered = new Promise<void>(resolve => { announce = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const create = backend.create
+  backend.create = async options => { announce(); await gate; return create(options) }
+  let first: Promise<void> | undefined
+  let second: Promise<void> | undefined
+  const creating = fetch(`${url.origin}/dsh-pet/create?${url.searchParams}`, {
+    method: 'POST', headers: { origin: url.origin, 'content-type': 'application/json' }, body: JSON.stringify({ roleId: 'text' }),
+  }).catch(() => {})
+  try {
+    await entered
+    let firstDone = false
+    let secondDone = false
+    first = host.stop().then(() => { firstDone = true })
+    second = host.stop().then(() => { secondDone = true })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(firstDone).toBe(false)
+    expect(secondDone).toBe(false)
+    expect(() => acquireInstanceLock(storage.lockPath)).toThrow(/already running/)
+    release()
+    await Promise.all([first, second, creating])
+    expect(handles.every(handle => handle.destroyed)).toBe(true)
+    const lock = acquireInstanceLock(storage.lockPath)
+    lock.release()
+  } finally { release(); await Promise.all([first, second, creating]) }
+})
+
 it('shuts down windows and releases ownership even when an authenticated POST body is incomplete', async () => {
   const { host, server, storage, handles } = await setup()
   await server.stop()

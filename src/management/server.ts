@@ -21,6 +21,7 @@ export class ManagementServer {
   private readonly routes = new Map<string, Parameters<WebServerService['register']>[0]['handler']>()
   private origin = ''
   private mutations: Promise<unknown> = Promise.resolve()
+  private stopping: Promise<void> | undefined
   private migrationDeclined = false
   private readonly server = createServer((request, response) => { void this.handle(request, response) })
   private readonly petsDirectory: string
@@ -133,10 +134,14 @@ export class ManagementServer {
     catch (error) { await this.stop(); throw error }
   }
   async stop(): Promise<void> {
+    if (this.stopping) return this.stopping
     if (!this.server.listening) return
     const closed = new Promise<void>((resolve, reject) => this.server.close(error => error ? reject(error) : resolve()))
     this.server.closeAllConnections()
-    await Promise.all([closed, this.mutations.catch(() => {})])
-    await rm(join(this.host.dataDirectory, 'management.json'), { force: true })
+    this.stopping = (async () => {
+      await Promise.all([closed, this.mutations.catch(() => {})])
+      await rm(join(this.host.dataDirectory, 'management.json'), { force: true })
+    })()
+    try { await this.stopping } finally { this.stopping = undefined }
   }
 }
