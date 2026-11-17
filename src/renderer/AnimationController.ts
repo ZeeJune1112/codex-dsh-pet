@@ -26,6 +26,8 @@ const realClock: AnimationClock = {
 export interface AnimationControllerOptions {
   atlas: AtlasBuffer
   scale: number
+  /** Playback multiplier; values above one shorten frame durations. */
+  speed?: number
   clock?: AnimationClock
   onFrame?: (frame: PetFrame) => void
 }
@@ -34,6 +36,7 @@ export class AnimationController {
   private readonly clock: AnimationClock
   private readonly atlas: AtlasBuffer
   private readonly scale: number
+  private readonly speed: number
   private readonly onFrame: ((frame: PetFrame) => void) | undefined
 
   private state: CodexPetState = 'idle'
@@ -47,6 +50,7 @@ export class AnimationController {
     this.clock = options.clock ?? realClock
     this.atlas = options.atlas
     this.scale = options.scale
+    this.speed = options.speed ?? 1
     this.onFrame = options.onFrame
   }
 
@@ -56,10 +60,15 @@ export class AnimationController {
 
   /** Switch the looping animation. Restarts from the first frame. */
   setState(state: CodexPetState): void {
+    if (this.disposed) return
     if (this.state === state && this.playing) return
     this.state = state
     this.frameIndex = 0
     this.resumeState = undefined
+    if (!this.playing) {
+      this.emitCurrent()
+      return
+    }
     this.scheduleNext()
   }
 
@@ -104,7 +113,7 @@ export class AnimationController {
     const row = animationRowFor(this.state)
     if (!row) return
     const durations = row.durations
-    const duration = durations[this.frameIndex % durations.length] ?? 150
+    const duration = (durations[this.frameIndex % durations.length] ?? 150) / this.speed
 
     this.emitCurrent()
 

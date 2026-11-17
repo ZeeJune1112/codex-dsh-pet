@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importPetFromPetdex } from '../src/petdex'
@@ -31,6 +31,20 @@ function fakeFetch(assetHost = 'assets.petdex.dev'): typeof fetch {
 }
 
 describe('importPetFromPetdex', () => {
+  it('rejects concurrent imports without removing the winning role', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-petdex-'))
+    try {
+      const results = await Promise.allSettled([
+        importPetFromPetdex('boba', { directory: root, fetchImpl: fakeFetch() }),
+        importPetFromPetdex('boba', { directory: root, fetchImpl: fakeFetch() }),
+      ])
+      expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+      expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
+      expect(JSON.parse(readFileSync(join(root, 'boba', 'pet.json'), 'utf8')).id).toBe('boba')
+      expect(readFileSync(join(root, 'boba', 'spritesheet.webp'))).toEqual(readFileSync(join(process.cwd(), 'assets', 'pets', 'text', 'spritesheet.webp')))
+    } finally { rmSync(root, { recursive: true, force: true, maxRetries: 4, retryDelay: 75 }) }
+  })
+
   it('imports and normalizes an approved Petdex pet', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-petdex-'))
     const result = await importPetFromPetdex('boba', { directory: root, fetchImpl: fakeFetch() })

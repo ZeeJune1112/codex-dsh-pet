@@ -23,6 +23,7 @@ export interface PetWindowOptions {
   atlas: AtlasBuffer
   scale: number
   alwaysOnTop: boolean
+  animationSpeed?: number
   animationEnabled: boolean
   /** Seconds between idle variations (transient wave/hop). */
   idleFrequencySec: number
@@ -52,6 +53,8 @@ const IDLE_TRANSIENTS: readonly CodexPetState[] = ['waving']
 export class PetWindow {
   private readonly backend: WindowBackend
   private readonly animationEnabled: boolean
+  private readonly animationSpeed: number
+  private readonly alwaysOnTop: boolean
   private readonly idleFrequencySec: number
   private readonly clickThrough: boolean
   private readonly clock: AnimationClock
@@ -83,6 +86,8 @@ export class PetWindow {
     this.atlas = options.atlas
     this.scale = options.scale
     this.animationEnabled = options.animationEnabled
+    this.animationSpeed = options.animationSpeed ?? 1
+    this.alwaysOnTop = options.alwaysOnTop
     this.idleFrequencySec = options.idleFrequencySec
     this.clickThrough = options.clickThrough ?? false
     this.clock = options.clock ?? { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }
@@ -112,7 +117,7 @@ export class PetWindow {
       height,
       x: this.currentX,
       y: this.currentY,
-      alwaysOnTop: true,
+      alwaysOnTop: this.alwaysOnTop,
       clickThrough: this.clickThrough,
       onDrag: (x, y) => {
         this.currentX = x
@@ -140,6 +145,7 @@ export class PetWindow {
     this.controller = new AnimationController({
       atlas: this.atlas,
       scale: this.scale,
+      speed: this.animationSpeed,
       clock: this.clock,
       onFrame: (frame) => this.present(frame),
     })
@@ -233,6 +239,7 @@ export class PetWindow {
 
   private scheduleIdleVariation(): void {
     this.cancelIdleVariation()
+    if (!this.animationEnabled) return
     const ms = Math.max(8, this.idleFrequencySec) * 1000 * (0.7 + this.random() * 0.6)
     this.idleTimer = this.clock.setTimeout(() => {
       this.idleTimer = undefined
