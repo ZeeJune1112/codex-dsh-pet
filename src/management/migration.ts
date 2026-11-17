@@ -124,10 +124,8 @@ export async function migrateLegacy(host: DesktopPetHost, source: string): Promi
         staged.push(id)
       }
     }
-    const existingRoles = new Set(host.getSnapshot().map(pet => pet.roleId))
     const available = new Set([...scanPets(undefined, destination).map(role => role.id), ...staged])
-    const desired = [...new Set([...order, ...staged, ...preferences.keys()])].filter(id => available.has(id) && !existingRoles.has(id)
-      && (!existsSync(join(destination, id)) || staged.includes(id)))
+    const desired = [...new Set([...order, ...staged, ...preferences.keys()])].filter(id => available.has(id))
     const instances = desired.map(roleId => ({ ...defaultPetInstance(), ...fallback, ...preferences.get(roleId), roleId }))
     await mkdir(destination, { recursive: true })
     for (const id of staged) {

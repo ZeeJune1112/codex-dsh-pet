@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cpSync, existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DesktopPetHost } from '../src/standalone'
@@ -9,12 +9,14 @@ import type { PetFrame } from '../src/renderer/FrameDecoder'
 import { randomUUID } from 'node:crypto'
 import { sendHookEvent } from '../src/integration/hooks-transport'
 import { normalizeHookEvent } from '../src/integration/hooks'
+import * as petAssets from '../src/pets'
 
 class FakeHandle implements WindowHandle {
   shown = true
   destroyed = false
+  lastPixel: number | undefined
   constructor(readonly options: WindowBackendOptions) {}
-  present(_frame: PetFrame): void {}
+  present(frame: PetFrame): void { this.lastPixel = frame.rgba[0] }
   move(): void {}
   setAlwaysOnTop(): void {}
   show(): void { this.shown = true }
@@ -39,6 +41,68 @@ function fakeBackend() {
 const atlas = { width: 1536, height: 1872, rgba: new Uint8Array(1536 * 1872 * 4) }
 
 describe('DesktopPetHost', () => {
+  it.each(['missing', 'invalid'])('keeps healthy windows and management available when a saved role is %s', async failure => {
+    const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-broken-role-')))
+    if (failure === 'invalid') {
+      cpSync(new URL('../assets/pets/text', import.meta.url), join(storage.directory, 'pets', 'broken-role'), { recursive: true })
+      writeFileSync(join(storage.directory, 'pets', 'broken-role', 'spritesheet.webp'), 'invalid image')
+    }
+    const instances = [defaultPetInstance('healthy'), { ...defaultPetInstance('broken'), roleId: 'broken-role', sessionId: 'keep-chat', scale: 1.5 }]
+    storage.save({ version: 2, instances })
+    const { backend, handles } = fakeBackend()
+    const host = new DesktopPetHost({ backend, storage, hookPipePath: null })
+    try {
+      await expect(host.start()).resolves.toBeUndefined()
+      expect(handles).toHaveLength(1)
+      expect(handles[0].destroyed).toBe(false)
+      expect(storage.load().instances).toEqual(instances)
+      const url = new URL(await host.startManagement())
+      const state = await (await fetch(`${url.origin}/dsh-pet/state?${url.searchParams}`)).json() as any
+      expect(state.pets.find((pet: any) => pet.id === 'broken')).toMatchObject({ loadFailed: true, sessionId: 'keep-chat', roleId: 'broken-role' })
+      host.bindInstance('broken', 'new-chat')
+      expect(host.getSnapshot().find(pet => pet.id === 'broken')).toMatchObject({ loadFailed: true, sessionId: 'new-chat' })
+      const repaired = await fetch(`${url.origin}/dsh-pet/update?${url.searchParams}`, {
+        method: 'POST', headers: { origin: url.origin, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'broken', patch: { roleId: 'text' } }),
+      })
+      expect(repaired.status).toBe(200)
+      const snapshot = await repaired.json() as any
+      expect(snapshot.pets.find((pet: any) => pet.id === 'broken')).toMatchObject({ loadFailed: false, roleId: 'text', scale: 1.5, sessionId: 'new-chat' })
+      expect(handles).toHaveLength(2)
+      expect(handles.every(handle => !handle.destroyed)).toBe(true)
+      expect(storage.load().instances[1]).toMatchObject({ roleId: 'text', sessionId: 'new-chat' })
+    } finally { await host.stop() }
+  })
+
+  it('applies a role change made while a new session is still loading its first window', async () => {
+    const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-opening-role-')))
+    const { backend, handles } = fakeBackend()
+    let release!: () => void
+    let announce!: () => void
+    const loading = new Promise<void>(resolve => { announce = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const otherAtlas = { ...atlas, rgba: new Uint8Array(atlas.rgba.length).fill(255) }
+    let textLoads = 0
+    const loader = vi.spyOn(petAssets, 'loadPetAtlas').mockImplementation(async role => {
+      if (role === 'text' && ++textLoads === 2) { announce(); await gate }
+      return role === 'other-role' ? otherAtlas : atlas
+    })
+    const host = new DesktopPetHost({ backend, storage, hookPipePath: null })
+    let opening: Promise<void> | undefined
+    try {
+      await host.start()
+      await host.acceptHookEvent({ eventType: 'UserPromptSubmit', sessionId: 'A', turnId: 'a', timestamp: 1 })
+      opening = host.acceptHookEvent({ eventType: 'UserPromptSubmit', sessionId: 'B', turnId: 'b', timestamp: 2 })
+      await loading
+      const id = host.getSnapshot().find(pet => pet.sessionId === 'B')!.id
+      const changing = host.updateInstance(id, { roleId: 'other-role' })
+      await new Promise(resolve => setImmediate(resolve))
+      release()
+      await Promise.all([opening, changing])
+      expect(storage.load().instances.find(pet => pet.id === id)?.roleId).toBe('other-role')
+      expect(handles.at(-1)?.lastPixel).toBe(255)
+    } finally { release(); await opening?.catch(() => {}); await host.stop(); loader.mockRestore() }
+  })
+
   it('acknowledges a new session after slow window creation without launching another host', async () => {
     const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-slow-window-')))
     const { backend } = fakeBackend()

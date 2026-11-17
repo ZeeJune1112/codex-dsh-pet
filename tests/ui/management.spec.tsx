@@ -15,6 +15,29 @@ async function click(text: string) {
   await act(async () => { button!.click() })
 }
 afterEach(async () => { await act(async () => root?.unmount()); container?.remove(); vi.unstubAllGlobals() })
+it('shows an unavailable saved role and lets the user select a working replacement', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  let snapshot = { selectedPetId: 'broken', order: ['broken'], roles: [{ id: 'text', displayName: 'Text' }],
+    pets: [{ id: 'broken', roleId: 'missing-role', displayName: 'missing-role', visible: true, scale: 1, hideWhenIdle: false,
+      feedback: 'UNKNOWN', availability: 'unobserved', loadFailed: true }] }
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, options?: RequestInit) => {
+    if (options?.method === 'POST') {
+      const body = JSON.parse(options.body as string)
+      expect(body).toEqual({ id: 'broken', patch: { roleId: 'text' } })
+      snapshot = { ...snapshot, pets: [{ ...snapshot.pets[0], roleId: 'text', displayName: 'Text', loadFailed: false }] }
+    }
+    return new Response(JSON.stringify(snapshot))
+  }))
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container)
+  await act(async () => root.render(createElement(DesktopPetCard, { t: key => en[key], initiallyOpen: true })))
+  expect(container.querySelector('[role=alert]')?.textContent).toContain('Choose an available role')
+  const role = container.querySelector<HTMLSelectElement>('[aria-label="Role"]')!
+  expect(role.value).toBe('missing-role')
+  await act(async () => { role.value = 'text'; role.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(container.querySelector('[role=alert]')).toBeNull()
+  expect(container.querySelector('img')!.alt).toBe('Text')
+})
+
 it('renders roles and truthful feedback, sends token-aware controls, bindings, imports and explicit migration choices', async () => {
   requests.length = 0
   state = { selectedPetId: 'one', order: ['one', 'two'], migration: 'available', roles: [{ id: 'text', displayName: 'Text' }, { id: 'other', displayName: 'Other' }], pets: [
