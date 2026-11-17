@@ -1,4 +1,4 @@
-# Codex single-session hook feedback
+# Codex session-isolated hook feedback
 
 Build with `npm run build`. `node lib/hooks.js --generate-config` reads the user
 `$CODEX_HOME/hooks.json` (default `~/.codex/hooks.json`) and prints merged JSON to
@@ -30,13 +30,32 @@ async. These limits may drop an event on a slow cold start; a later event can
 reach the running host. The per-user name prevents ordinary user collisions;
 it is not authentication against another process able to access the pipe.
 
-The host binds the first received session for its process lifetime and ignores
-other sessions. Restart it to observe a different session. Events and the
-binding stay in memory; position/scale persistence is unchanged. Older observed
-timestamps are ignored. With no source timestamp, adapter receipt time is used;
-this cannot reconstruct the true order of delayed asynchronous hooks.
+The host routes events by opaque session ID. A new session first binds an
+unbound pet; if all pets are bound, the host creates another instance. Instances
+have separate IDs and windows, so multiple chats can use the same role. Focus
+does not change a binding. Drag, hover, right-click hide and scale affect only
+the selected instance. Role loading uses the downstream `pets` directory under
+the host data directory, with bundled roles as fallback; it does not consult
+the upstream `~/.dsh` directory automatically.
 
-| Hook | Public `currentSemanticState` | Existing animation |
+`state.json` under `%LOCALAPPDATA%\codex-dsh-pet` stores version 2 configuration:
+instance ID, role ID, opaque session binding, position, scale and visibility.
+Writes use a flushed temporary file and atomic rename. Existing single-pet
+position/scale files migrate on load. Events, turn IDs, feedback, timestamps,
+chat content and tool data are never saved. Restart restores each bound pet as
+UNKNOWN/unobserved and each unbound pet as IDLE. A new observation can restore
+feedback; history lost during restart cannot be reconstructed.
+
+Older observed timestamps and events for turns already interrupted, ended or
+replaced by a newer prompt are ignored. Turn IDs are opaque identities and are
+never sorted. Stop is a continuation boundary: it sets UNKNOWN but still allows
+later activity in the same turn. Equal-time conflicts, unknown competing turns
+and missing turn IDs produce conservative UNKNOWN feedback. An ambiguous event
+cannot clear an existing possible wait. PermissionRequest itself can establish
+possible waiting even without a turn ID. With no source timestamp, adapter
+receipt time is used; this cannot reconstruct the true order of delayed hooks.
+
+| Hook / observation | Public snapshot `feedback` | Existing animation |
 | --- | --- | --- |
 | SessionStart | STARTING | waving |
 | UserPromptSubmit | THINKING | running |
@@ -45,17 +64,37 @@ this cannot reconstruct the true order of delayed asynchronous hooks.
 | Stop | UNKNOWN | neutral idle pose |
 | Interrupt | INTERRUPTED | neutral idle pose |
 | SessionEnd | ENDED | neutral idle pose |
-| No fresh observation for 30 seconds | UNKNOWN | neutral idle pose |
+| Work without fresh evidence for 30 seconds | UNKNOWN, stale | neutral idle pose |
+| Permission wait without fresh evidence for five minutes | POSSIBLY_WAITING, stale | waiting |
+| Unbound instance | IDLE | idle |
 
 The neutral pose does not assert that Codex is idle or successful. Unknown,
 interrupted and ended are separate public statuses for a future visible status
 indicator. The existing sprite contract has no dedicated poses for them.
-PermissionRequest only suggests possible waiting; later activity supersedes it,
-without claiming that a particular approval was granted. Stop never means
-success, and only a received SessionEnd means ended. A completed tool does not
-mean the turn is finished. The upstream harness state machine is unchanged.
+PermissionRequest only suggests possible waiting; trusted later activity can
+supersede it without claiming that a particular approval was granted. A timer
+never clears waiting. Stop never means success, and only a received SessionEnd
+means ended. SessionEnd keeps the instance and its configuration; a subsequent
+SessionStart or a prompt with a new turn ID can resume the same session. A
+completed tool does not mean the turn is finished. The upstream harness state
+machine is unchanged.
 
-Tests cover whitelist parsing, idempotent merge, real local-pipe delivery,
-detached cold startup/retry, deadlines and silent wrapper exit. Live native
-Codex delivery and trust review still require a user session. Source contract:
+The management boundary is `DesktopPetHost.getSnapshot()`, which returns copies
+of each instance's settings plus `feedback`, `pose`, `stale`, `lastEventAt` and
+`lastEventType`. `availability` is `unbound`, `unobserved`, `observed`, `stale`, or
+`unavailable` (host stopped). These describe local observations, not native Hook
+trust: short-lived pipe connections cannot establish ongoing availability or
+prove that a Hook was skipped. `bindInstance(id, sessionId)` explicitly rebinds,
+and `bindInstance(id, null)` unbinds to idle; binding an already-bound session to
+another instance is rejected. `updateInstance(id, { roleId, scale, visible })`
+updates settings, and changes on one instance are serialized. A management UI
+must display the separate feedback/stale/availability labels alongside neutral
+sprites; that UI is outside this ticket.
+
+Tests cover whitelist parsing, idempotent merge, real local-pipe two-session
+delivery and restart, separate same-role windows, turn ordering, same-turn Stop
+continuation, stale waiting, explicit rebinding, settings persistence, detached
+cold startup/retry, deadlines and silent wrapper exit. Pipe tests use a fake
+window backend; they do not prove native Codex delivery or Windows interaction.
+Live native Codex delivery and trust review still require a user session. Source contract:
 [Codex Hooks](https://learn.chatgpt.com/docs/hooks), checked 2026-11-17.

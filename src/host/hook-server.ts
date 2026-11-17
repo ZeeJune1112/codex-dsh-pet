@@ -3,10 +3,10 @@ import { normalizeHookEvent, type NormalizedHookEvent } from '../integration/hoo
 
 export interface HookEventServerOptions {
   pipePath: string
-  onEvent: (event: NormalizedHookEvent) => void
+  onEvent: (event: NormalizedHookEvent) => void | Promise<void>
 }
 
-/** Line-delimited JSON server for the standalone host's one-session adapter. */
+/** Line-delimited JSON server for the standalone host's session adapter. */
 export class HookEventServer {
   private server: Server | undefined
   private readonly sockets = new Set<Socket>()
@@ -18,9 +18,11 @@ export class HookEventServer {
     const server = createServer(socket => {
       this.sockets.add(socket)
       let pending = ''
+      let handled = false
       socket.setEncoding('utf8')
       socket.setTimeout(1000, () => socket.destroy())
       socket.on('data', chunk => {
+        if (handled) return
         pending += chunk
         if (pending.length > 128 * 1024) {
           socket.destroy()
@@ -35,8 +37,11 @@ export class HookEventServer {
           try {
             const parsed = normalizeHookEvent(JSON.parse(line))
             if (parsed) {
-              this.options.onEvent(parsed)
-              socket.end('ok\n')
+              handled = true
+              Promise.resolve(this.options.onEvent(parsed)).then(
+                () => socket.end('ok\n'),
+                () => socket.destroy(),
+              )
             } else socket.destroy()
           } catch {
             socket.destroy()

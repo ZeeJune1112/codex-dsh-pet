@@ -53,7 +53,7 @@ describe('hook pipe transport', () => {
   it('delivers a normalized event over a real local pipe', async () => {
     const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
     const events: NormalizedHookEvent[] = []
-    const server = new HookEventServer({ pipePath, onEvent: value => events.push(value) })
+    const server = new HookEventServer({ pipePath, onEvent: value => { events.push(value) } })
     await server.start()
     try {
       await expect(sendHookEvent({ ...event, turnId: 't1' }, { pipePath })).resolves.toBe(true)
