@@ -39,7 +39,7 @@ describe('DesktopPetHost', () => {
   it('persists drag position and scale, wires hover and right-click hide, and cleans up', async () => {
     const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'codex-dsh-pet-')))
     const { backend, handles } = fakeBackend()
-    const host = new DesktopPetHost({ backend, storage, atlas })
+    const host = new DesktopPetHost({ backend, storage, atlas, hookPipePath: null })
 
     await host.start()
     expect(handles).toHaveLength(1)
@@ -68,13 +68,39 @@ describe('DesktopPetHost', () => {
 
   it('rejects a second host while the first owns the data directory', async () => {
     const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'codex-dsh-pet-')))
-    const first = new DesktopPetHost({ backend: fakeBackend().backend, storage, atlas })
-    const second = new DesktopPetHost({ backend: fakeBackend().backend, storage, atlas })
+    const first = new DesktopPetHost({ backend: fakeBackend().backend, storage, atlas, hookPipePath: null })
+    const second = new DesktopPetHost({ backend: fakeBackend().backend, storage, atlas, hookPipePath: null })
 
     await first.start()
     await expect(second.start()).rejects.toThrow(/already running/)
     await first.stop()
     await second.start()
     await second.stop()
+  })
+
+  it('renders only one session and keeps lifecycle feedback honest', async () => {
+    const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-hooks-')))
+    const host = new DesktopPetHost({ backend: fakeBackend().backend, storage, atlas, hookPipePath: null })
+    await host.start()
+    try {
+      host.acceptHookEvent({ eventType: 'SessionStart', sessionId: 's1', timestamp: 1 })
+      expect(host.currentSemanticState).toBe('STARTING')
+      expect(host.currentPose).toBe('waving')
+      host.acceptHookEvent({ eventType: 'UserPromptSubmit', sessionId: 's1', timestamp: 2, turnId: 't1' })
+      expect(host.currentSemanticState).toBe('THINKING')
+      host.acceptHookEvent({ eventType: 'PreToolUse', sessionId: 's1', timestamp: 3, turnId: 't1' })
+      expect(host.currentPose).toBe('running')
+      host.acceptHookEvent({ eventType: 'PermissionRequest', sessionId: 's1', timestamp: 4, turnId: 't1' })
+      expect(host.currentSemanticState).toBe('POSSIBLY_WAITING')
+      expect(host.currentPose).toBe('waiting')
+      host.acceptHookEvent({ eventType: 'Stop', sessionId: 'other', timestamp: 5 })
+      expect(host.currentSemanticState).toBe('POSSIBLY_WAITING')
+      host.acceptHookEvent({ eventType: 'Stop', sessionId: 's1', timestamp: 6, turnId: 't1' })
+      expect(host.currentSemanticState).toBe('UNKNOWN')
+      host.acceptHookEvent({ eventType: 'SessionEnd', sessionId: 's1', timestamp: 7 })
+      expect(host.currentSemanticState).toBe('ENDED')
+      host.acceptHookEvent({ eventType: 'PreToolUse', sessionId: 's1', timestamp: 3, turnId: 't1' })
+      expect(host.currentSemanticState).toBe('ENDED')
+    } finally { await host.stop() }
   })
 })

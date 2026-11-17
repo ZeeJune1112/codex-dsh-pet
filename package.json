@@ -43,6 +43,8 @@
     "prepublishOnly": "npm run build",
     "build": "tsdown",
     "start:host": "npm run build && node lib/standalone.js",
+    "hooks:config": "node lib/hooks.js --generate-config",
+    "verify:hooks": "node scripts/verify-hooks.mjs",
     "verify:client-registration": "node scripts/verify-client-registration.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",

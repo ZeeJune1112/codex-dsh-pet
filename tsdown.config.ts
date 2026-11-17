@@ -75,7 +75,7 @@ const cssModulesPlugin = {
 export default defineConfig([
   // --- Node (host) half ----------------------------------------------------
   {
-    entry: { index: 'src/index.ts', standalone: 'src/standalone.ts' },
+    entry: { index: 'src/index.ts', standalone: 'src/standalone.ts', hooks: 'src/hooks.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
