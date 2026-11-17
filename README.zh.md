@@ -1,8 +1,23 @@
-# dsh-pet
+# Codex dsh-pet
 
 [English](README.md) | 中文
 
-独立 Codex 宿主的启动、管理链接、实例绑定、导入及显式迁移见 [本地管理说明](docs/management.md)。运行 `npm run start:host` 启动，`npm run management:url` 查询运行中宿主的管理链接。
+面向 **Windows 11 x64、Node 22/npm** 的 Codex 独立桌宠。保留上游渲染器、动画、素材格式和管理功能，每个实例明确绑定一个聊天，不额外调用模型。
+
+```powershell
+npm ci
+npm run start:host
+```
+
+打开宿主输出的私有管理链接；由 Hook 启动时，运行 `npm run management:url` 查询。管理页支持角色、多实例、绑定、显示/隐藏、缩放、排序及 ZIP/Petdex 导入。上游数据只通过显式迁移操作复制。设置和本机角色保存在 `%LOCALAPPDATA%\codex-dsh-pet`。
+
+当前只发行上游原有的 **Text (test)** 原创验证素材。可在管理页导入自己有权使用的 Codex/Pocket Pet ZIP 或 Petdex 角色；导入素材只留在本机，不随源码再分发。
+
+Codex 状态反馈需要先构建，再按 [配置生成与原生审核说明](docs/codex-hooks.md) 操作，安装不会激活 Hooks。另见 [本地管理](docs/management.md)、[验证记录及待人工验收项](docs/verification.md)、[上游基线与补丁](docs/upstream-sync.md)、[许可通知](THIRD_PARTY_NOTICES.md)。真实审核后的 Hooks、物理 DPI 和多显示器验收仍待完成，合成测试不等同于这些实测。
+
+## 保留的上游指南
+
+下文描述保留的 DeepSeek Harness 插件模式；本下游的独立 Codex 入口见以上快速开始。
 
 **dsh-pet** 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的可选桌宠插件。它**兼容 Codex 桌宠格式**（`pet.json` + 8×9 或 8×11 精灵图），并且可以**直接在插件内从 [Petdex](https://petdex.dev/) 导入桌宠**，不需要额外安装 Petdex CLI。
 

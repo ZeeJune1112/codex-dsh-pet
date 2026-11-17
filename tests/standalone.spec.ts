@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { cpSync, existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import type { WindowBackend, WindowBackendOptions, WindowHandle } from '../src/r
 import type { PetFrame } from '../src/renderer/FrameDecoder'
 import { randomUUID } from 'node:crypto'
 import { sendHookEvent } from '../src/integration/hooks-transport'
+import { normalizeHookEvent } from '../src/integration/hooks'
 
 class FakeHandle implements WindowHandle {
   shown = true
@@ -38,6 +39,32 @@ function fakeBackend() {
 const atlas = { width: 1536, height: 1872, rgba: new Uint8Array(1536 * 1872 * 4) }
 
 describe('DesktopPetHost', () => {
+  it('writes only opt-in allowlisted pipe diagnostics and never raw session or event content', async () => {
+    const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-diagnostics-')))
+    const pipePath = process.platform === 'win32' ? `\\\\.\\pipe\\pet-test-${randomUUID()}` : join(tmpdir(), `pet-${randomUUID()}.sock`)
+    let now = 0
+    const host = new DesktopPetHost({ backend: fakeBackend().backend, storage, atlas, hookPipePath: pipePath, now: () => now })
+    const path = join(storage.directory, 'diagnostics.jsonl')
+    const event = normalizeHookEvent({ hook_event_name: 'PreToolUse', session_id: 'private-session', turn_id: 't1', timestamp: 1,
+      tool_name: 'secret-tool', tool_input: 'private input', tool_output: 'private result', prompt: 'private prompt', transcript_path: 'private transcript' })!
+    await host.start()
+    try {
+      vi.stubEnv('CODEX_PET_DIAGNOSTICS', '')
+      expect(await sendHookEvent(event, { pipePath })).toBe(true)
+      expect(existsSync(path)).toBe(false)
+      vi.stubEnv('CODEX_PET_DIAGNOSTICS', '1')
+      expect(await sendHookEvent({ ...event, eventType: 'PermissionRequest', timestamp: 2 }, { pipePath })).toBe(true)
+      now = 300_001
+      expect(host.getSnapshot()[0]).toMatchObject({ feedback: 'POSSIBLY_WAITING', stale: true })
+      const rows = readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toEqual({ eventType: 'PermissionRequest', sessionHash: expect.stringMatching(/^[a-f0-9]{64}$/), turnId: 't1',
+        stateTransition: { from: 'WORKING', to: 'POSSIBLY_WAITING' } })
+      expect(rows[1]).toEqual({ eventType: 'PermissionRequest', sessionHash: rows[0].sessionHash, turnId: 't1', errorCode: 'STALE_WAIT' })
+      expect(readFileSync(path, 'utf8')).not.toMatch(/private|secret-tool|tool_input|transcript/)
+    } finally { vi.unstubAllEnvs(); await host.stop() }
+  })
+
   it('routes two concurrent pipe sessions to separate windows using the same role', async () => {
     const storage = new HostStorage(mkdtempSync(join(tmpdir(), 'pet-sessions-')))
     const { backend, handles } = fakeBackend()

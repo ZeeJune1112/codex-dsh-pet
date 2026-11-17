@@ -14,6 +14,23 @@ it is read. Codex's native review in Settings > Hooks (or `/hooks` in the CLI)
 is still required. Config already using inline TOML hooks should be reviewed
 before adding a second representation; this generator only merges hooks.json.
 
+For a concrete, non-activating PowerShell review copy (UTF-8 without a BOM):
+
+```powershell
+npm run build
+[IO.File]::WriteAllText("$PWD/hooks.review.json", (node lib/hooks.js --generate-config | Out-String))
+```
+
+Inspect the eight desktop-pet entries in `hooks.review.json`, including the resolved
+Node and wrapper paths, one-second timeout, async settings and preservation of your
+unrelated hooks. This file is a review artifact, not an active config. When ready,
+the user can copy the reviewed merged content to the input `hooks.json` location.
+Then use the desktop composer **Review hooks**, or **Settings > Hooks** (CLI:
+`/hooks`), to review and enable the exact definitions. A changed definition needs
+fresh review. Neither the generator nor these verification scripts write approval
+hashes, disable trust checks, or confirm native approval from file presence.
+Keep the review copy private because unrelated user hook commands may be present.
+
 The wrapper forwards only event type, session ID, optional turn ID, timestamp,
 tool name and a recognized permission-mode value. It does not open a transcript,
 persist the input, forward tool arguments/results, call a model, or return
@@ -21,8 +38,11 @@ approval/block/context output. Raw stdin is capped at 64 KiB. Malformed input,
 unreachable pipes, and failed launches silently exit zero.
 
 The Windows pipe name includes a hash of the user's home directory. The first
-delivery failure starts the standalone host detached with hidden stdio, waits
-400 ms and retries once. Transport has an 800 ms deadline; the entire wrapper,
+delivery failure starts the standalone host detached with hidden stdio. The child
+signals pipe readiness over a temporary IPC channel; the wrapper then retries
+once. A losing concurrent child exit also permits that one retry. The channel is
+closed on readiness or deadline, and a late signal cannot trigger delivery. There
+is no fixed startup sleep. Transport has an 800 ms deadline; the entire wrapper,
 including stdin, has a 900 ms deadline after JavaScript startup. All generated
 handlers set a one-second Codex timeout. `SessionEnd` is explicitly synchronous:
 Codex runs it synchronously even if an async flag is set. Other handlers are
@@ -41,8 +61,9 @@ the upstream `~/.dsh` directory automatically.
 `state.json` under `%LOCALAPPDATA%\codex-dsh-pet` stores version 2 configuration:
 instance ID, role ID, opaque session binding, position, scale and visibility.
 Writes use a flushed temporary file and atomic rename. Existing single-pet
-position/scale files migrate on load. Events, turn IDs, feedback, timestamps,
-chat content and tool data are never saved. Restart restores each bound pet as
+position/scale files migrate on load. Events, turn IDs, feedback and timestamps
+are excluded from this state file; chat content and tool data are never saved.
+Restart restores each bound pet as
 UNKNOWN/unobserved and each unbound pet as IDLE. A new observation can restore
 feedback; history lost during restart cannot be reconstructed.
 
@@ -88,8 +109,30 @@ prove that a Hook was skipped. `bindInstance(id, sessionId)` explicitly rebinds,
 and `bindInstance(id, null)` unbinds to idle; binding an already-bound session to
 another instance is rejected. `updateInstance(id, { roleId, scale, visible })`
 updates settings, and changes on one instance are serialized. A management UI
-must display the separate feedback/stale/availability labels alongside neutral
-sprites; that UI is outside this ticket.
+displays the separate feedback/stale/availability labels alongside neutral sprites.
+
+## Opt-in diagnostics
+
+Diagnostics are off unless the host/wrapper process has `CODEX_PET_DIAGNOSTICS=1`.
+To collect a local host validation run, quit the existing host, then run:
+
+```powershell
+$env:CODEX_PET_DIAGNOSTICS = '1'
+npm run start:host
+```
+
+Accepted events and stale-state errors go to
+`%LOCALAPPDATA%\codex-dsh-pet\diagnostics.jsonl`. Wrapper delivery/input errors are
+also recorded if that wrapper inherited the variable. The only record keys are
+`eventType`, `sessionHash` (SHA-256), optional `turnId`, `stateTransition` (`from` /
+`to`), and `errorCode`. Errors are fixed codes, never exception messages. Logs omit
+raw session IDs, source input, prompts, tool names/arguments/results, transcript
+paths/content and management tokens. This does not alter the existing session
+binding stored in settings. Diagnostic writes fail open, stop at 1 MiB, and do not
+rotate automatically. Delete the local log before a fresh collection if full.
+To disable, quit the host, `Remove-Item Env:CODEX_PET_DIAGNOSTICS`, and restart.
+Environment changes affect newly launched processes; they do not update a running
+Codex app or host. A hash is correlation metadata, not proof of anonymization.
 
 Tests cover whitelist parsing, idempotent merge, real local-pipe two-session
 delivery and restart, separate same-role windows, turn ordering, same-turn Stop

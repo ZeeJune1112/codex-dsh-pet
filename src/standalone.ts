@@ -12,6 +12,9 @@ import { DEFAULT_HOOK_PIPE } from './integration/hooks-transport'
 import { normalizeHookEvent, type NormalizedHookEvent } from './integration/hooks'
 import type { CodexPetState, SemanticState } from './core/types'
 import { ManagementServer } from './management/server'
+import { recordDiagnostic } from './integration/diagnostics'
+
+const isHostEntrypoint = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
 
 export type CodexFeedbackState = 'IDLE' | 'STARTING' | 'THINKING' | 'WORKING' | 'POSSIBLY_WAITING' | 'UNKNOWN' | 'INTERRUPTED' | 'ENDED'
 // shortcut: the sprite contract has no unknown/interrupted poses; management must display the separate feedback label.
@@ -126,10 +129,12 @@ export class DesktopPetHost {
   }
 
   private refreshStale(pet: PetInstance): void {
-    if (pet.lastEvidenceAt === undefined || pet.ended || pet.feedback === 'INTERRUPTED') return
+    if (pet.lastEvidenceAt === undefined || pet.ended || pet.feedback === 'INTERRUPTED' || pet.stale) return
     const timeout = pet.feedback === 'POSSIBLY_WAITING' ? 300_000 : 30_000
     if (this.now() - pet.lastEvidenceAt < timeout) return
     pet.stale = true
+    recordDiagnostic({ event: { eventType: pet.lastEventType!, sessionId: pet.settings.sessionId!, turnId: pet.lastEventTurnId },
+      errorCode: pet.feedback === 'POSSIBLY_WAITING' ? 'STALE_WAIT' : 'STALE_ACTIVITY' }, this.storage.directory)
     if (pet.feedback !== 'POSSIBLY_WAITING') {
       pet.feedback = 'UNKNOWN'
       pet.window?.setState(FEEDBACK_POSE.UNKNOWN)
@@ -328,8 +333,14 @@ export class DesktopPetHost {
       this.restore()
       // Listen before atlas/native initialization so the first cold-start event is retained.
       if (this.hookPipePath !== null) {
-        this.hookServer = new HookEventServer({ pipePath: this.hookPipePath, onEvent: event => this.acceptHookEvent(event) })
+        this.hookServer = new HookEventServer({ pipePath: this.hookPipePath, onEvent: async event => {
+          try { await this.acceptHookEvent(event) }
+          catch (error) { recordDiagnostic({ event, errorCode: 'HOST_EVENT_FAILED' }, this.storage.directory); throw error }
+        } })
         await this.hookServer.start()
+        if (isHostEntrypoint && process.connected) {
+          process.send?.('hook-pipe-ready', () => { if (process.connected) process.disconnect?.() })
+        }
       }
       if (this.backend === undefined) this.backend = selectBackend()
       if (!this.backend) throw new Error(`no supported desktop pet window backend on ${process.platform}`)
@@ -392,7 +403,10 @@ export class DesktopPetHost {
       pet.settings = settings
       this.instances.set(settings.id, pet)
     }
-    if (event.timestamp < pet.latestTimestamp || (event.turnId !== undefined && pet.completedTurns.has(event.turnId))) return
+    if (event.timestamp < pet.latestTimestamp || (event.turnId !== undefined && pet.completedTurns.has(event.turnId))) {
+      recordDiagnostic({ event, errorCode: 'STALE_EVENT' }, this.storage.directory)
+      return
+    }
     if (event.timestamp === pet.latestTimestamp && event.eventType === pet.lastEventType && event.turnId === pet.lastEventTurnId) return
     let ambiguous = event.timestamp === pet.latestTimestamp
     if (pet.ended && event.eventType !== 'SessionStart' && event.eventType !== 'UserPromptSubmit') return
@@ -427,7 +441,9 @@ export class DesktopPetHost {
     pet.lastEventAt = this.now()
     pet.lastEventType = event.eventType
     pet.lastEventTurnId = event.turnId
+    const previousFeedback = pet.feedback
     pet.feedback = ambiguous ? (pet.feedback === 'POSSIBLY_WAITING' ? 'POSSIBLY_WAITING' : 'UNKNOWN') : EVENT_FEEDBACK[event.eventType]
+    recordDiagnostic({ event, stateTransition: { from: previousFeedback, to: pet.feedback } }, this.storage.directory)
     pet.idleSince = pet.feedback === 'ENDED' ? this.now() : undefined
     this.scheduleSleep(pet)
     if (!ambiguous) {
@@ -453,7 +469,7 @@ export async function runDesktopPetHost(options: DesktopPetHostOptions = {}): Pr
   return host
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+if (isHostEntrypoint) {
   if (process.argv.includes('--management-url')) {
     try {
       const value = JSON.parse(readFileSync(join(new HostStorage().directory, 'management.json'), 'utf8'))

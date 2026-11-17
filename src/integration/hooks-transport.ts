@@ -15,7 +15,7 @@ export interface PipeConnection {
 export interface HookTransportOptions {
   pipePath?: string
   connect?: (pipePath: string) => Promise<PipeConnection>
-  launchHost?: () => Promise<void> | void
+  launchHost?: (signal: AbortSignal) => Promise<void> | void
   timeoutMs?: number
 }
 
@@ -44,22 +44,38 @@ export function defaultHostScript(): string {
 }
 
 /** Launch without a console window or inherited hook handles. */
-export function launchDetachedHost(script = defaultHostScript(), pipePath = DEFAULT_HOOK_PIPE): Promise<void> {
+export function launchDetachedHost(script = defaultHostScript(), pipePath = DEFAULT_HOOK_PIPE, timeoutMs = 800, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error('launch deadline')); return }
     const child = spawn(process.execPath, [script, '--hook-pipe', pipePath], {
-      detached: true, stdio: 'ignore', windowsHide: true,
+      detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true,
     })
-    child.once('error', reject)
-    child.once('spawn', () => { child.unref(); resolve() })
+    const finish = (error?: Error) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
+      child.removeAllListeners('message')
+      child.removeAllListeners('exit')
+      if (child.connected) child.disconnect()
+      child.unref()
+      if (error) reject(error)
+      else resolve()
+    }
+    const abort = () => finish(new Error('launch deadline'))
+    const timer = setTimeout(abort, timeoutMs)
+    signal?.addEventListener('abort', abort, { once: true })
+    child.once('error', finish)
+    // A concurrent launcher may lose the singleton race; its exit still permits one retry.
+    child.once('exit', () => finish())
+    child.on('message', message => { if (message === 'hook-pipe-ready') finish() })
   })
 }
 
-/** A single initial attempt, detached launch, then one delayed retry within a hard deadline. */
+/** A single initial attempt, detached readiness, then one retry within a hard deadline. */
 export async function sendHookEvent(event: NormalizedHookEvent, options: HookTransportOptions = {}): Promise<boolean> {
   let expired = false
   let connection: PipeConnection | undefined
   let deadline: ReturnType<typeof setTimeout> | undefined
-  let retryTimer: ReturnType<typeof setTimeout> | undefined
+  const launch = new AbortController()
   const pipePath = options.pipePath ?? DEFAULT_HOOK_PIPE
   const write = async () => {
     connection = await (options.connect ?? connectPipe)(pipePath)
@@ -71,9 +87,7 @@ export async function sendHookEvent(event: NormalizedHookEvent, options: HookTra
     try { return await write() } catch { /* cold host */ }
     if (expired) return false
     try {
-      await (options.launchHost ?? (() => launchDetachedHost(undefined, pipePath)))()
-      if (expired) return false
-      await new Promise<void>(resolve => { retryTimer = setTimeout(resolve, 400) })
+      await (options.launchHost ?? (signal => launchDetachedHost(undefined, pipePath, options.timeoutMs ?? 800, signal)))(launch.signal)
       if (expired) return false
       return await write()
     } catch { return false }
@@ -86,7 +100,7 @@ export async function sendHookEvent(event: NormalizedHookEvent, options: HookTra
   } finally {
     expired = true
     clearTimeout(deadline)
-    clearTimeout(retryTimer)
+    launch.abort()
     connection?.close()
   }
 }
